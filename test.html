@@ -1,0 +1,194 @@
+<html>
+    <head>
+        <style>
+            canvas {
+                margin: auto;
+                width: 800px;
+                height: 600px;
+                border:1px solid #000000;
+            }
+            div.lola {
+                margin: auto;
+                margin-top: 50px;
+                display: flex;
+                align-items: center;
+            }
+        </style>
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                var c = document.getElementById("myCanvas");
+                var ctx = c.getContext("2d");
+                draw(ctx)
+            })
+
+            function draw(ctx) {
+                let ps = Array(19).fill(0).map(x=>({x: Math.random()*300+100, y: Math.random()*300+100}))
+                ctx.fillStyle = 'purple';
+                for(let i=0; i<ps.length; i++)
+                    ctx.fillRect(ps[i].x,ps[i].y,4,4);  
+                
+                let gs = grahamScan(ps)
+                drawPolygon(ctx, gs)
+                rasterRegion(0,0,600,600,60,60,[gs],ctx)
+                
+                ctx.fillStyle = 'red';
+                for(let i=0; i<ps.length; i++)
+                    ctx.fillRect(ps[i].x,ps[i].y,4,4); 
+            }
+
+            function drawPolygon(ctx, points) {
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for(let i=1; i<points.length; i++)
+                    ctx.lineTo(points[i].x,points[i].y);
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            function grahamScan(points) { 
+                let bottomP = points.reduce((p,c)=>c.y<p.y||c.y==p.y&&c.x<p.x?c:p)
+                let sorted = points.map(x=>({...x, degree: this.degree(bottomP,x)}))
+                sorted.sort((a,b) => {
+                    let dif = a.degree-b.degree
+                    if(dif==0) {
+                        let f = this.distance(a,bottomP)
+                        let s = this.distance(b,bottomP)
+                        return (a.degree >= Math.pi/2) ? (f>s ? -1 : 1) : (f<s ? -1 : 1)
+                    }
+                    return dif
+                })
+                let stack = [sorted[0], sorted[1]]
+                for(let i=2; i<sorted.length; i++) {
+                    while(this.crossProduct(
+                        this.difference(stack[stack.length-2],stack[stack.length-1]),
+                        this.difference(stack[stack.length-1], sorted[i])
+                    )<0) stack.pop()
+                    stack.push(sorted[i])
+                }
+                return stack.map(i=>({x: i.x, y: i.y}))
+            }
+
+            function degree(a,b) {
+                return Math.atan2((b.y-a.y),(b.x-a.x))
+            }
+
+            function distance(a,b) {
+                return Math.pow((b.y-a.y)**2+(b.x-a.x)**2,0.5)
+            }
+
+            function difference(a,b) {
+                return {x: b.x-a.x, y: b.y-a.y}
+            }
+
+            function crossProduct(a,b) {
+                return a.x*b.y-a.y*b.x
+            }
+
+            function rasterRegion(x,y,w,h,r,c,polygons,ctx) {
+                let map = new Map()
+                
+                let fillRasterGrid = (col,heights) => {
+                    let hs = heights.map(x=>Math.floor(x/(h/r)))
+                    for(let i=1; i<hs.length; i+=2) {
+                        Array.from({length: hs[i]-hs[i-1]+1}, (_, ind) => hs[i-1] + ind)
+                        .map(r=>[c*r+col, c*r+col+1])
+                        .flat()
+                        .forEach(x=>map.set(x,true))
+                    }
+                }
+
+                for(let i=0; i<c-1; i++) {
+                    let p0 = {x:(x+(i+1)*(w/c)), y:y}
+                    let p1 = {...p0, y:y+h}
+                    line(p0,p1,ctx)
+                    let intersections = []
+
+                    for(let a=0; a<polygons.length; a++) {
+                        let intrsc = findIntersection(p0, p1, polygons[a][0], polygons[a][polygons[a].length-1])
+                        if(intrsc) intersections.push(intrsc)
+                        for(let b=1; b<polygons[a].length; b++) {
+                            intrsc = findIntersection(p0, p1, polygons[a][b], polygons[a][b-1])
+                            if(intrsc) intersections.push(intrsc)
+                        }
+                    }
+                    intersections = intersections.map(x=>x.y)
+                    intersections.sort((a,b)=>a-b)
+                    fillRasterGrid(i,intersections)
+                }
+
+                let grid = Array.from({length: r}).fill(0)
+                grid = grid.map(x=> Array.from({length: c}, (_,i)=>0))
+                console.log(grid)
+                for(let k of map.keys()) {
+                    square({y: Math.floor(k/c)*10, x: (k%c)*10}, ctx)
+                    grid[Math.floor(k/c)][k%c] = 1
+                }
+                // return grid
+            }
+
+            function findIntersection(p0, p1, p2, p3) {
+                const s10_x = p1.x - p0.x;
+                const s10_y = p1.y - p0.y;
+                const s32_x = p3.x - p2.x;
+                const s32_y = p3.y - p2.y;
+
+                const denom = s10_x * s32_y - s32_x * s10_y;
+
+                if (denom === 0) return null; // collinear
+
+                const denom_is_positive = denom > 0;
+
+                const s02_x = p0.x - p2.x;
+                const s02_y = p0.y - p2.y;
+
+                const s_numer = s10_x * s02_y - s10_y * s02_x;
+
+                if ((s_numer < 0) === denom_is_positive) 
+                    return null; // no collision
+
+                const t_numer = s32_x * s02_y - s32_y * s02_x;
+
+                if ((t_numer < 0) === denom_is_positive) 
+                    return null; // no collision
+
+                if ((s_numer > denom) === denom_is_positive || (t_numer > denom) === denom_is_positive) 
+                    return null; // no collision
+
+                const t = t_numer / denom;
+
+                return {x: p0.x + (t * s10_x), y: p0.y + (t * s10_y)};
+            }
+
+            function findPathAStar(start,end,grid) {
+                let frameArr = Array.from({length: 9}, (_,i)=>[~~(i/3)-1, (i%3)-1])
+                let visited = new Map()
+                let evaluated = []
+
+                let distance = (p1,p2) => {
+                    let dx = Math.abs(p1.x-p2.x)
+                    let dy = Math.abs(p1.y-p2.y)
+                    return dx>dy ? (dx-dy)*10+dy*14 : (dy-dx)*10+dx*14
+                }
+            }
+
+            function line(p0,p1,ctx) {
+                ctx.moveTo(p0.x,p0.y);
+                ctx.lineTo(p1.x,p1.y);
+                ctx.stroke();
+            }
+
+            function square(p,ctx) {
+                ctx.fillStyle = "green";
+                ctx.fillRect(p.x+2, p.y+2, 6, 6);
+            }
+
+        </script>
+    </head>
+    <body>
+        <div class="lola">
+            <canvas id="myCanvas" width="800" height="600"></canvas>
+
+        </div>
+    </body>
+</html>
