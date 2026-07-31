@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>simpleMOBA Map Editor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: monospace;
+  background: #222;
+  color: #ccc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+}
+h1 { color: #fff; margin-bottom: 10px; }
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  align-items: center;
+  max-width: 680px;
+}
+.toolbar-section { display: flex; gap: 4px; align-items: center; }
+.toolbar-section span { font-size: 11px; color: #999; margin-right: 2px; }
+.tile-btn {
+  padding: 4px 8px;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 11px;
+  color: #fff;
+  background: #444;
+  min-width: 52px;
+  text-align: center;
+}
+.tile-btn.active { border-color: #ff0; }
+.tile-btn.grass { background: #4a7; }
+.tile-btn.water { background: #26d; }
+.tile-btn.wall { background: #666; }
+.tile-btn.spawn { background: #eee; color: #222; }
+.tile-btn.enemy { background: #c33; }
+.tool-input {
+  background: #222;
+  border: 1px solid #555;
+  color: #ccc;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 4px;
+  width: 36px;
+  text-align: center;
+}
+.tool-input:focus { outline: none; border-color: #ff0; }
+.btn {
+  padding: 4px 8px;
+  background: #555;
+  border: 1px solid #777;
+  color: #ccc;
+  font-family: monospace;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.btn:hover { background: #666; }
+.btn.active { background: #7a0; border-color: #ff0; }
+#canvas-wrap {
+  position: relative;
+  border: 2px solid #555;
+  margin-bottom: 8px;
+}
+#map-canvas { display: block; }
+#info-bar {
+  font-size: 12px;
+  background: #333;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  min-width: 640px;
+}
+#info-bar span { color: #ff0; }
+</style>
+</head>
+<body>
+
+<h1>simpleMOBA Map Editor</h1>
+
+<div id="toolbar">
+  <div class="toolbar-section">
+    <button class="tile-btn grass active" data-tile="0">Grass</button>
+    <button class="tile-btn water" data-tile="1">Water</button>
+    <button class="tile-btn wall" data-tile="2">Wall</button>
+    <button class="tile-btn spawn" data-tile="3">Spawn</button>
+    <button class="tile-btn enemy" data-tile="4">Enemy</button>
+  </div>
+
+  <div class="toolbar-section" id="wall-section">
+    <span>Orientation:</span>
+    <button class="btn active" id="orient-h" data-orient="h">H</button>
+    <button class="btn" id="orient-v" data-orient="v">V</button>
+    <span>Length:</span>
+    <input class="tool-input" id="wall-length" type="number" value="1" min="1" max="40">
+  </div>
+
+  <div class="toolbar-section" id="water-section">
+    <span>Size:</span>
+    <input class="tool-input" id="water-cols" type="number" value="2" min="1" max="40" placeholder="W">
+    <input class="tool-input" id="water-rows" type="number" value="2" min="1" max="30" placeholder="H">
+  </div>
+
+  <div class="toolbar-section">
+    <span>Tile:</span>
+    <input class="tool-input" id="tile-size" type="number" value="16" min="4" max="64">
+  </div>
+
+  <div class="toolbar-section">
+    <button class="btn" id="btn-save">Save</button>
+    <button class="btn" id="btn-load-default">Load Default</button>
+    <button class="btn" id="btn-upload">Upload</button>
+    <input type="file" id="file-input" accept=".json" style="display:none">
+  </div>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="map-canvas" width="640" height="480"></canvas>
+</div>
+
+<div id="info-bar">Ready — <span id="info-text">Click to place tiles</span></div>
+
+<script src="editor.js"></script>
+</body>
+</html>

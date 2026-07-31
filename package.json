@@ -8,5 +8,8 @@
   },
   "scripts": {
     "start": "node index.js"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }
