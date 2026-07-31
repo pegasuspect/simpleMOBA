@@ -154,16 +154,167 @@ NO_PROXY=localhost,127.0.0.1,::1 http_proxy= https_proxy= HTTPS_PROXY= HTTP_PROX
 - No automated tests for existing game (player movement, camera, multiplayer sync)
 - No end-to-end test for file upload/download flow
 
-## Open Questions
-1. **Undo/redo** — Not implemented in v1.
-2. **Tile size persistence** — The editor saves `tileSize` in the map JSON on every save. ✅ Confirmed working.
-3. **Game integration** — The game engine (`lib.js`) does not currently load editor map data. Per the approved plan, the editor is standalone for v1; the game reads its own textures and collision from the same JSON format later.
-4. **Multiple map files** — v1 uses only `maps/default.json`. Should future versions support per-map files or a map list?
-5. **Existing game bugs** (not fixed in this PR):
-   - Middle-click crash (`util.asd()` — undefined function)
-   - Missing disconnect handler for players (players array grows on reconnects)
-   - `players.push()` inside `position` handler causes "player not found" error on first position event
-   - Spelling typo: "Recieved" → "Received"
+## Pending Feedback (next iteration)
+
+User has identified four defects/feature requests after manual testing of the v1 editor:
+
+### 1. Camera / scene system (high priority)
+**Problem:** The editor has no camera. There is no viewport offset — all 40×30 tiles are drawn starting at canvas `(0,0)`. No arrow-key panning. No negative coordinate support. The game uses a 64×48 grid convention with a movable camera.
+**Expected fix:**
+- Grid resized to 64×48.
+- Add Camera state (`camX`, `camY`, `camDirX`, `camDirY`) offset in world pixels, centered on the map initially.
+- Arrow keys move the camera at the same speed as the game (2 pixels per tick, using `setInterval` for smooth panning).
+- All mouse→tile and draw→tile conversions use viewport-relative coordinates.
+- Canvas stays fixed at 640×480. Grid lines and tile drawing use viewport transforms.
+- Negative world coordinates are allowed and correctly rendered.
+
+### 2. Save button downloads instead of only uploading (medium priority)
+**Problem:** `btnSave` handler POSTs to `/editor-data` then *also* creates a Blob URL and clicks a hidden `<a>` element to download `maps/default.json` as a file. User explicitly stated: "I do not need to download anything from the editor."
+**Expected fix:** Remove the Blob/download logic from the Save handler. Only POST to server. Update info text accordingly.
+
+### 3. "Load Default" button does nothing useful (low priority)
+**Problem:** `btnLoadDefault` fetches `GET /editor-data` and calls `loadMapData()`. But the default map is all grass — loading it produces an identical view. User expects a different purpose.
+**Expected fix:** Replace "Load Default" with a "Start Over" button. On click, show `confirm("Are you sure?")`. If confirmed, reset the grid to all grass and reset camera. If cancelled, do nothing.
+
+### 4. Tile-size input zooms the canvas instead of setting placement size (medium priority)
+**Problem:** `tileSizeInput` fires `applyTileSize()` which changes `tileSize`, resizes the canvas, and redraws. This zooms the entire viewport. User wants the input to set **placement size** for the currently selected tile type *before* placement. Grid cell size stays fixed.
+**Expected fix:**
+- Remove canvas resize from `applyTileSize()` — canvas stays 640×480.
+- `tileSizeInput` sets pixel size for the *currently selected tile type* (stored per-tile).
+- `drawTile()` uses placement size for the current type instead of grid cell size.
+- Grid lines and coordinate conversion remain on the fixed grid cell size.
+
+### Files to modify (next fix pass)
+| File | Action |
+|------|--------|
+| `public/editor.js` | Heavy rewrite: camera system, arrow-key handling, viewport transforms, negative coord support, Save-only, Start Over handler, per-tile placement sizes |
+| `public/editor.html` | Rename button, relabel inputs, minor CSS tweak for canvas-wrap |
+
+---
+
+# Map Editor v2 — Fix Pass
+
+## Fix Pass Date
+2026-07-31
+
+## Fixes Applied
+All four pending feedback items resolved in a single fix pass.
+
+### 1. Camera / scene system ✅
+- Grid resized from 40×30 → 64×48
+- Added Raylib-style camera projection (`camX`, `camY`, `camDirX`, `camDirY`)
+- Camera centered on map at init (`camX = (640 - 64×16)/2`, `camY = (480 - 48×16)/2`)
+- Arrow keys + WASD panning at 2px/tick via `setInterval` (16ms tick = ~60fps)
+- Multi-key support with key state tracker — diagonal movement normalized to prevent faster diagonal panning
+- Keyboard input ignored when typing in toolbar inputs
+- All mouse→tile conversion uses viewport-relative coordinates via `screenToGrid()`
+- `gridToScreen()` transform used for all tile and grid line rendering
+- Off-screen tiles skipped in draw loop via `isCellVisible()` check
+- Camera clamped to map bounds
+
+### 2. Save only, no download ✅
+- Removed Blob URL + hidden `<a>` download logic from `btnSave` handler
+- Info bar text changed from "Saved to server! — Click to download" → "Saved to server!"
+- Removed hidden `<a id="downloadLink">` element from `editor.html`
+
+### 3. "Load Default" → "Start Over" ✅
+- Button text changed from "Load Default" → "Start Over"
+- Handler shows `confirm("Reset to empty grid?")` before resetting
+- On confirm: grid reset to all grass, camera reset to center, `lastPlacedCol/Row` cleared
+- On cancel: no-op
+
+### 4. Placement size (not canvas zoom) ✅
+- `applyTileSize()` replaced with per-tile placement size system
+- Canvas stays fixed at 640×480 regardless of placement size
+- `placementSizes` object stores per-tile pixel size: `{ tileId: sizePx }`
+- `drawTile()` uses `placementSizes[selectedTile] || tileSize` for render size
+- Grid lines and coordinate conversion remain on fixed `GRID_CELL` (16px)
+- Default placement size for all tile types = 16px (matching old behavior)
+- Placement sizes persisted to saved JSON (backwards-compatible — older maps use 16px default)
+- Label changed from "Tile:" → "Placement:" in toolbar
+- Info bar shows placement size: "Selected: Grass (placement size: 16px)"
+
+### 5. Body size limit (self-review MEDIUM item) ✅
+- Replaced manual `req.on('data')` / `req.on('end')` chunk accumulation in POST /editor-data
+- Added `express.json({ limit: '1mb' })` middleware to the route
+- 1MB limit prevents large body accumulation before validation rejects
+
+## Diff Highlights (v2)
+
+### editor.js — Key changes
+| Change | Description |
+|--------|-------------|
+| `COLS`=64, `ROWS`=48 | Grid resized from 40×30 to 64×48 |
+| `GRID_CELL`=16 | New constant for fixed grid cell size |
+| `camX`, `camY`, `camDirX`, `camDirY` | Camera projection state |
+| `keysDown` map | Tracks pressed keys for multi-direction panning |
+| `centerCamera()` | Centers camera on map at init |
+| `startCameraPanning()` / `stopCameraPanning()` | `setInterval`-based panning loop |
+| `clampCamera()` | Constrains camera to map bounds |
+| `screenToGrid(screenX, screenY)` | Viewport-relative coordinate conversion |
+| `gridToScreen(col, row)` | World-to-screen transform for drawing |
+| `isCellVisible(col, row)` | Culling: skips off-screen tiles |
+| `updateCameraDirection()` | Normalized directional vector from multi-key input |
+| `placementSizes` object | Per-tile placement pixel size |
+| `drawTile()` remapped | Uses placement size; centers tile within grid cell |
+| `drawGrid()` remapped | Uses `gridToScreen()` for all line/tile positions |
+| `cellFromMouse()` remapped | Uses `screenToGrid()` with camera offset |
+| Save handler | Blob/download logic removed |
+| Start Over handler | New handler with `confirm()` dialog |
+| Tile size handler | Sets per-tile placement size instead of canvas size |
+
+### editor.html — Changes
+- Button "Load Default" → "Start Over" (id: `btn-start-over`)
+- Label "Tile:" → "Placement:"
+- Canvas remains 640×480 (unchanged dimensions)
+
+### index.js — Changes
+- `express.json({ limit: '1mb' })` middleware on POST /editor-data
+- Default map creation now uses 64×48 dimensions
+
+### README.md — Changes
+- Usage step 5: "Tile size" → "Placement size" with fixed 16px grid note
+- Usage step 6: Save — removed "downloads a `.json` file for backup"
+- Usage step 7: "Load Default" → "Start Over"
+- Usage step 9: Added Pan instructions (arrow keys / WASD)
+- Map data format example: 40×30 → 64×48
+- Limitations: v1 → v2, fixed grid note removed
+
+## Test Results
+### Environment
+- Sandbox with outbound proxy (`http://10.200.0.1:3128`)
+- Tests bypass proxy via `NO_PROXY=localhost,127.0.0.1,::1` to reach loopback
+
+### Commands
+```bash
+node index.js 2>&1 &
+NO_PROXY=localhost,127.0.0.1,::1 http_proxy= https_proxy= HTTPS_PROXY= HTTP_PROXY= ALL_PROXY= \
+  node test-smoke.mjs 2>&1
+```
+
+### Results: 29 passed, 0 failed
+- All v1 tests pass through
+- GET /editor: 4/4
+- GET /: 3/3 (no regression)
+- GET /editor-data: 7/7 (test POSTs its own 40×30 map, server accepts any valid map)
+- POST /editor-data valid: 6/6
+- POST /editor-data invalid: 7/7
+- Socket.IO mapUpdate: 3/3
+
+## Files Modified (v2 fix pass)
+| File | Changes |
+|------|--------|
+| `public/editor.js` | ~300 lines changed: camera system, viewport transforms, multi-key input, placement sizes, Save-only, Start Over |
+| `public/editor.html` | Button rename, input relabel |
+| `index.js` | `express.json()` body limit, 64×48 default map size |
+| `README.md` | Updated usage, data format example, limitations |
+| `maps/default.json` | Regenerated as 64×48 grass map |
+
+## Known problems (existing game, not yet addressed)
+- Middle-click crash in `lib.js` (`util.asd()` undefined)
+- Missing Socket.IO disconnect handler (player array grows)
+- `players.push()` inside `position` handler (first position event fails for new player)
+- Spelling: "Recieved" in `index.js`
 
 ---
 

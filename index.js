@@ -33,13 +33,13 @@ app.get('/editor-data', (req, res) => {
   var mapPath = __dirname + '/maps/default.json';
   if (!fs.existsSync(mapPath)) {
     var blank = {
-      width: 40,
-      height: 30,
+      width: 64,
+      height: 48,
       tileSize: 16,
       tiles: []
     };
-    for (var r = 0; r < 30; r++) {
-      blank.tiles.push(new Array(40).fill(0));
+    for (var r = 0; r < 48; r++) {
+      blank.tiles.push(new Array(64).fill(0));
     }
     fs.writeFileSync(mapPath, JSON.stringify(blank, null, 2));
   }
@@ -48,41 +48,35 @@ app.get('/editor-data', (req, res) => {
 });
 
 // POST /editor-data — save map and broadcast
-app.post('/editor-data', (req, res) => {
+app.post('/editor-data', express.json({ limit: '1mb' }), function (req, res) {
   var mapPath = __dirname + '/maps/default.json';
-  var chunks = '';
-  req.on('data', function (chunk) {
-    chunks += chunk;
-  });
-  req.on('end', function () {
-    try {
-      var data = JSON.parse(chunks);
-      // Validate structure
-      if (!data || !Array.isArray(data.tiles)) {
-        return res.status(400).json({ error: 'Map data must include a tiles array' });
-      }
-      // Ensure tiles is 2D array of numbers 0-4
-      for (var r = 0; r < data.tiles.length; r++) {
-        for (var c = 0; c < data.tiles[r].length; c++) {
-          var val = data.tiles[r][c];
-          if (typeof val !== 'number' || val < 0 || val > 4) {
-            return res.status(400).json({ error: 'Tile values must be integers 0-4' });
-          }
+  try {
+    var data = req.body;
+    // Validate structure
+    if (!data || !Array.isArray(data.tiles)) {
+      return res.status(400).json({ error: 'Map data must include a tiles array' });
+    }
+    // Ensure tiles is 2D array of numbers 0-4
+    for (var r = 0; r < data.tiles.length; r++) {
+      for (var c = 0; c < data.tiles[r].length; c++) {
+        var val = data.tiles[r][c];
+        if (typeof val !== 'number' || val < 0 || val > 4) {
+          return res.status(400).json({ error: 'Tile values must be integers 0-4' });
         }
       }
-      if (typeof data.width !== 'number' || typeof data.height !== 'number' || typeof data.tileSize !== 'number') {
-        return res.status(400).json({ error: 'Map data must include width, height, and tileSize' });
-      }
-      // Write to disk
-      fs.writeFileSync(mapPath, JSON.stringify(data, null, 2));
-      mapData = data;
-      // Broadcast to all connected sockets
-      io.emit('mapUpdate', data);
-      res.json({ saved: true });
-    } catch (err) {
-      res.status(400).json({ error: 'Invalid JSON: ' + err.message });
     }
-  });
+    if (typeof data.width !== 'number' || typeof data.height !== 'number' || typeof data.tileSize !== 'number') {
+      return res.status(400).json({ error: 'Map data must include width, height, and tileSize' });
+    }
+    // Write to disk
+    fs.writeFileSync(mapPath, JSON.stringify(data, null, 2));
+    mapData = data;
+    // Broadcast to all connected sockets
+    io.emit('mapUpdate', data);
+    res.json({ saved: true });
+  } catch (err) {
+    res.status(400).json({ error: 'Invalid JSON: ' + err.message });
+  }
 });
 
 io.on('connection', (socket) => {
