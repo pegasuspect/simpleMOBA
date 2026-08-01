@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>simpleMOBA Map Editor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #f3f4f6;
+      color: #17202a;
+    }
+
+    main {
+      width: min(800px, calc(100% - 32px));
+      margin: 32px auto;
+    }
+
+    .editor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.35rem;
+    }
+
+    .preview-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      font-weight: 600;
+      user-select: none;
+    }
+
+    .preview-control input {
+      width: 42px;
+      height: 22px;
+      accent-color: #2563eb;
+      cursor: pointer;
+    }
+
+    #status {
+      min-height: 24px;
+      margin: 0 0 8px;
+      color: #52606d;
+      font-size: .9rem;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid #111827;
+      background: #fff;
+      box-shadow: 0 4px 16px rgb(0 0 0 / 8%);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="editor-header">
+      <h1>Map Editor</h1>
+      <label class="preview-control" for="preview-toggle">
+        <span>Preview</span>
+        <input id="preview-toggle" type="checkbox" role="switch">
+      </label>
+    </div>
+    <p id="status">Editor mode · use the arrow keys to move the camera</p>
+    <canvas id="editor-canvas" width="800" height="600" tabindex="0" aria-label="Map editor canvas"></canvas>
+  </main>
+
+  <script src="/lib.js"></script>
+  <script src="/editor.js"></script>
+</body>
+</html>

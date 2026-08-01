@@ -12,6 +12,10 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
+app.get(['/editor', '/editor/'], (req, res) => {
+  res.sendFile(__dirname + '/editor.html');
+});
+
 io.on('connection', (socket) => {
   socket.on('position', player => {
     let p = players.find(x => x.id === player.id);
