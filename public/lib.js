@@ -76,19 +76,81 @@ class Game {
     cam = new Camera()
     otherPlayers = []
     id = -1
+    mapWidth = null
+    mapHeight = null
 
     constructor(ctx, socket, id) {
+        this.ctx = ctx
         this.utils = new Util(ctx, this.cam)
         this.controller = new Controller(this);
+    }
+
+    applyMapState(mapState) {
+        const size = mapState && typeof mapState.size === 'string'
+            ? mapState.size.match(/^(\d+)x(\d+)$/)
+            : null
+        if(size && Number(size[1]) > 0 && Number(size[2]) > 0) {
+            this.mapWidth = Number(size[1])
+            this.mapHeight = Number(size[2])
+        }
+
+        const spawn = mapState && mapState.spawn
+        if(spawn && Number.isFinite(spawn.x) && Number.isFinite(spawn.y)) {
+            this.p1.x = spawn.x
+            this.p1.y = spawn.y
+            this.p1.translation = null
+        }
+
+        this.constrainPlayer()
+        this.constrainCamera()
+    }
+
+    constrainPlayer() {
+        if(this.mapWidth === null || this.mapHeight === null) return
+        const minX = Math.min(this.p1.r, this.mapWidth / 2)
+        const maxX = Math.max(this.mapWidth - this.p1.r, this.mapWidth / 2)
+        const minY = Math.min(this.p1.r, this.mapHeight / 2)
+        const maxY = Math.max(this.mapHeight - this.p1.r, this.mapHeight / 2)
+        const x = Math.min(maxX, Math.max(minX, this.p1.x))
+        const y = Math.min(maxY, Math.max(minY, this.p1.y))
+
+        if(x !== this.p1.x || y !== this.p1.y) {
+            this.p1.x = x
+            this.p1.y = y
+            this.p1.translation = null
+        }
+    }
+
+    constrainDestination(x, y) {
+        if(this.mapWidth === null || this.mapHeight === null) return [x, y]
+        const minX = Math.min(this.p1.r, this.mapWidth / 2)
+        const maxX = Math.max(this.mapWidth - this.p1.r, this.mapWidth / 2)
+        const minY = Math.min(this.p1.r, this.mapHeight / 2)
+        const maxY = Math.max(this.mapHeight - this.p1.r, this.mapHeight / 2)
+        return [
+            Math.min(maxX, Math.max(minX, x)),
+            Math.min(maxY, Math.max(minY, y))
+        ]
+    }
+
+    constrainCamera() {
+        if(this.mapWidth === null || this.mapHeight === null) return
+        const halfWidth = this.ctx.canvas.width / 2
+        const halfHeight = this.ctx.canvas.height / 2
+        this.cam.x = Math.min(this.mapWidth - halfWidth, Math.max(-halfWidth, this.cam.x))
+        this.cam.y = Math.min(this.mapHeight - halfHeight, Math.max(-halfHeight, this.cam.y))
     }
 
     update() {
         this.p1.update();
         this.cam.update();
+        this.constrainPlayer();
+        this.constrainCamera();
     }
 
     draw() {
         this.utils.clear()
+        this.drawMapBoundary()
         this.p1.draw(this.utils)
         for (let i = 0; i < this.otherPlayers.length; i++) {
             const player = this.otherPlayers[i];
@@ -96,6 +158,20 @@ class Game {
                 this.utils.circle(player.x, player.y, this.p1.r, 'black');
             }
         }
+    }
+
+    drawMapBoundary() {
+        if(this.mapWidth === null || this.mapHeight === null) return
+        this.ctx.save()
+        this.ctx.strokeStyle = '#334155'
+        this.ctx.lineWidth = 3
+        this.ctx.strokeRect(
+            this.utils.vpx(0),
+            this.utils.vpy(0),
+            this.mapWidth,
+            this.mapHeight
+        )
+        this.ctx.restore()
     }
 }
 
@@ -113,9 +189,12 @@ class Player {
 
     setDestination(x,y) {
         let h = Math.pow((y-this.y)**2+(x-this.x)**2, 0.5)
-        let i = Math.round(h/this.speed)
-        let r = Math.atan2((y-this.y),(x-this.x))
-        this.translation = [i,[Math.cos(r)*this.speed, Math.sin(r)*this.speed]]
+        if(h === 0) {
+            this.translation = null
+            return
+        }
+        let i = Math.ceil(h/this.speed)
+        this.translation = [i,[(x-this.x)/i, (y-this.y)/i],[x,y]]
     }
 
     move() {
@@ -125,6 +204,8 @@ class Player {
             this.y += this.translation[1][1]
 
             if(this.translation[0] == 0) {
+                this.x = this.translation[2][0]
+                this.y = this.translation[2][1]
                 this.translation = null
             }
         }
@@ -168,7 +249,8 @@ class Controller {
     }
 
     rightMouseDown(e) {
-        this.game.p1.setDestination(...this.game.cam.translate(e.offsetX, e.offsetY))
+        const destination = this.game.cam.translate(e.offsetX, e.offsetY)
+        this.game.p1.setDestination(...this.game.constrainDestination(...destination))
     }
 
     leftMouseDown(e) {

@@ -29,6 +29,14 @@
             var socket = io();
             window.game = new Game(ctx, socket, -1);
 
+            fetch('/map-state')
+                .then(response => {
+                    if(!response.ok) throw new Error(`Map state request failed (${response.status})`);
+                    return response.json();
+                })
+                .then(mapState => window.game.applyMapState(mapState))
+                .catch(error => console.error('Unable to load map boundaries:', error));
+
             socket.on('id', (id) => {
                 if (window.game && window.game.id === -1) window.game.id = id;
             });

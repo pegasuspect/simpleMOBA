@@ -34,6 +34,60 @@
       font-size: 1.35rem;
     }
 
+    .toolbar {
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      min-height: 52px;
+      margin-bottom: 10px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .toolbar button,
+    .toolbar input {
+      box-sizing: border-box;
+      height: 34px;
+      border: 1px solid #9ca3af;
+      border-radius: 4px;
+      font: inherit;
+    }
+
+    .toolbar button {
+      padding: 0 14px;
+      background: #f8fafc;
+      cursor: pointer;
+    }
+
+    .toolbar button:hover:not(:disabled) {
+      background: #e5e7eb;
+    }
+
+    .toolbar label {
+      display: grid;
+      gap: 4px;
+      color: #4b5563;
+      font-size: .78rem;
+      font-weight: 600;
+    }
+
+    .toolbar input {
+      width: 130px;
+      padding: 0 9px;
+    }
+
+    .toolbar input.invalid {
+      border-color: #dc2626;
+      outline-color: #dc2626;
+    }
+
+    :disabled {
+      cursor: not-allowed;
+      opacity: .55;
+    }
+
     .preview-control {
       display: inline-flex;
       align-items: center;
@@ -73,7 +127,14 @@
       <h1>Map Editor</h1>
       <label class="preview-control" for="preview-toggle">
         <span>Preview</span>
-        <input id="preview-toggle" type="checkbox" role="switch">
+        <input id="preview-toggle" type="checkbox" role="switch" disabled>
+      </label>
+    </div>
+    <div class="toolbar" aria-label="Map editor toolbar">
+      <button id="spawn-button" type="button" disabled>Remove Spawn</button>
+      <label for="map-size">
+        Map boundaries
+        <input id="map-size" type="text" value="800x600" inputmode="numeric" pattern="[0-9]+x[0-9]+" disabled>
       </label>
     </div>
     <p id="status">Editor mode · use the arrow keys to move the camera</p>

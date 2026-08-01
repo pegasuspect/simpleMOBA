@@ -1,25 +1,60 @@
 (() => {
-    const SPAWN = Object.freeze({ x: 400, y: 300 });
+    const DEFAULT_SPAWN = Object.freeze({ x: 400, y: 300 });
+    const DEFAULT_SIZE = '800x600';
+    const SIZE_PATTERN = /^(\d+)x(\d+)$/;
+    const SPAWN_INSET = 20;
+
+    async function apiFetch(path, options) {
+        try {
+            const response = await fetch(path, options);
+            if (response.status !== 404 && response.status !== 405) return response;
+        } catch (error) {
+            if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) throw error;
+        }
+
+        if (!['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.port === '3000') {
+            throw new Error('The game server is unavailable.');
+        }
+
+        return fetch(`http://${window.location.hostname}:3000${path}`, options);
+    }
 
     class EditorController extends Controller {
+        leftMouseDown(event) {
+            this.game.placeSpawn(event);
+        }
+
         rightMouseDown() {}
         middleMouseDown() {}
     }
 
     class MapEditor {
-        constructor(canvas, toggle, status) {
-            this.canvas = canvas;
-            this.toggle = toggle;
-            this.status = status;
-            this.ctx = canvas.getContext('2d');
+        constructor(elements) {
+            this.canvas = elements.canvas;
+            this.toggle = elements.toggle;
+            this.status = elements.status;
+            this.spawnButton = elements.spawnButton;
+            this.sizeInput = elements.sizeInput;
+            this.ctx = this.canvas.getContext('2d');
             this.camera = new Camera();
             this.utils = new Util(this.ctx, this.camera);
             this.editorController = new EditorController(this);
             this.activeController = this.editorController;
             this.previewGame = null;
             this.editorCameraState = { x: 0, y: 0 };
+            this.mapState = {};
+            this.spawn = { ...DEFAULT_SPAWN };
+            this.mapSize = DEFAULT_SIZE;
+            this.placingSpawn = false;
+            this.spawnPreview = null;
+            this.saveQueue = Promise.resolve();
 
             this.onMouseDown = (event) => this.activeController.mouseDown(event);
+            this.onMouseMove = (event) => {
+                if (!this.placingSpawn) return;
+                const point = this.worldPoint(event);
+                if (this.pointWithinBoundaries(point, SPAWN_INSET)) this.spawnPreview = point;
+            };
             this.onContextMenu = (event) => this.activeController.contextMenu(event);
             this.onKeyDown = (event) => {
                 if (this.isArrowKey(event)) event.preventDefault();
@@ -30,18 +65,192 @@
                 this.activeController.keyUp(event);
             };
 
-            canvas.addEventListener('mousedown', this.onMouseDown);
-            canvas.addEventListener('contextmenu', this.onContextMenu);
+            this.canvas.addEventListener('mousedown', this.onMouseDown);
+            this.canvas.addEventListener('mousemove', this.onMouseMove);
+            this.canvas.addEventListener('contextmenu', this.onContextMenu);
             document.addEventListener('keydown', this.onKeyDown);
             document.addEventListener('keyup', this.onKeyUp);
-            toggle.addEventListener('change', () => this.setPreview(toggle.checked));
+            this.toggle.addEventListener('change', () => this.setPreview(this.toggle.checked));
+            this.spawnButton.addEventListener('click', () => this.beginSpawnPlacement());
+            this.sizeInput.addEventListener('input', () => this.validateSizeInput());
+            this.sizeInput.addEventListener('change', () => this.applyMapSize());
+            this.sizeInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') this.sizeInput.blur();
+            });
 
             this.frame = this.frame.bind(this);
             requestAnimationFrame(this.frame);
+            this.loadMapState();
         }
 
         get cam() {
             return this.camera;
+        }
+
+        async loadMapState() {
+            try {
+                const response = await apiFetch('/map-state');
+                if (!response.ok) throw new Error(`Map state request failed (${response.status})`);
+                const data = await response.json();
+                if (!data || Array.isArray(data) || typeof data !== 'object') {
+                    throw new Error('Map state is not an object');
+                }
+                this.mapState = data;
+                this.mapSize = this.validSize(data.size) ? data.size : DEFAULT_SIZE;
+                const loadedSpawn = this.validSpawn(data.spawn) ? data.spawn : DEFAULT_SPAWN;
+                this.spawn = this.clampMapPoint(loadedSpawn, SPAWN_INSET);
+                const adjustedSpawn = this.validSpawn(data.spawn) &&
+                    (this.spawn.x !== data.spawn.x || this.spawn.y !== data.spawn.y);
+                this.mapState.spawn = { ...this.spawn };
+                this.mapState.size = this.mapSize;
+                this.sizeInput.value = this.mapSize;
+                this.status.textContent = 'Editor mode · use the arrow keys to move the camera';
+                if (adjustedSpawn) {
+                    this.saveMapState('Out-of-bounds objects were moved inside the map boundaries.');
+                }
+            } catch (error) {
+                console.error(error);
+                this.mapState = {};
+                this.spawn = { ...DEFAULT_SPAWN };
+                this.mapSize = DEFAULT_SIZE;
+                this.status.textContent = 'Could not load map data; using game defaults.';
+            } finally {
+                this.toggle.disabled = false;
+                this.spawnButton.disabled = false;
+                this.sizeInput.disabled = false;
+                this.updateSpawnButton();
+            }
+        }
+
+        validSpawn(spawn) {
+            return spawn && Number.isFinite(spawn.x) && Number.isFinite(spawn.y);
+        }
+
+        validSize(value) {
+            const match = typeof value === 'string' && value.match(SIZE_PATTERN);
+            return Boolean(match && Number(match[1]) > 0 && Number(match[2]) > 0);
+        }
+
+        validateSizeInput() {
+            const valid = this.validSize(this.sizeInput.value);
+            this.sizeInput.classList.toggle('invalid', !valid);
+            this.sizeInput.setCustomValidity(valid ? '' : 'Use two positive integers separated by x, for example 800x600.');
+            return valid;
+        }
+
+        applyMapSize() {
+            if (!this.validateSizeInput()) {
+                this.status.textContent = 'Map boundaries must look like 800x600.';
+                return;
+            }
+
+            this.mapSize = this.sizeInput.value;
+            this.mapState.size = this.mapSize;
+            if (this.spawn) {
+                this.spawn = this.clampMapPoint(this.spawn, SPAWN_INSET);
+                this.mapState.spawn = { ...this.spawn };
+            }
+            this.clampCamera();
+            this.saveMapState('Map boundaries saved.');
+        }
+
+        beginSpawnPlacement() {
+            if (this.placingSpawn) {
+                this.canvas.focus();
+                return;
+            }
+
+            this.spawn = null;
+            delete this.mapState.spawn;
+            this.placingSpawn = true;
+            this.spawnPreview = null;
+            this.toggle.disabled = true;
+            this.sizeInput.disabled = true;
+            this.updateSpawnButton();
+            this.status.textContent = 'Move over the map and click to place the spawn point.';
+            this.saveMapState();
+            this.canvas.focus();
+        }
+
+        placeSpawn(event) {
+            if (!this.placingSpawn) return;
+
+            const point = this.worldPoint(event);
+            if (!this.pointWithinBoundaries(point, SPAWN_INSET)) {
+                this.status.textContent = 'The spawn point must be placed inside the map boundaries.';
+                return;
+            }
+
+            this.spawn = point;
+            this.mapState.spawn = { ...this.spawn };
+            this.placingSpawn = false;
+            this.spawnPreview = null;
+            this.toggle.disabled = false;
+            this.sizeInput.disabled = false;
+            this.updateSpawnButton();
+            this.saveMapState('Spawn point saved.');
+        }
+
+        updateSpawnButton() {
+            this.spawnButton.textContent = this.spawn ? 'Remove Spawn' : 'Place Spawn';
+        }
+
+        worldPoint(event) {
+            const scaleX = this.canvas.width / this.canvas.clientWidth;
+            const scaleY = this.canvas.height / this.canvas.clientHeight;
+            return {
+                x: Math.round(event.offsetX * scaleX + this.camera.x),
+                y: Math.round(event.offsetY * scaleY + this.camera.y)
+            };
+        }
+
+        mapDimensions() {
+            const dimensions = this.mapSize.match(SIZE_PATTERN);
+            return { width: Number(dimensions[1]), height: Number(dimensions[2]) };
+        }
+
+        pointWithinBoundaries(point, inset = 0) {
+            const { width, height } = this.mapDimensions();
+            if (width < inset * 2 || height < inset * 2) return false;
+            const minX = Math.min(inset, width / 2);
+            const maxX = Math.max(width - inset, width / 2);
+            const minY = Math.min(inset, height / 2);
+            const maxY = Math.max(height - inset, height / 2);
+
+            return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
+        }
+
+        clampMapPoint(point, inset = 0) {
+            const { width, height } = this.mapDimensions();
+            const minX = Math.min(inset, width / 2);
+            const maxX = Math.max(width - inset, width / 2);
+            const minY = Math.min(inset, height / 2);
+            const maxY = Math.max(height - inset, height / 2);
+
+            return {
+                x: Math.round(Math.min(maxX, Math.max(minX, point.x))),
+                y: Math.round(Math.min(maxY, Math.max(minY, point.y)))
+            };
+        }
+
+        saveMapState(successMessage) {
+            const snapshot = JSON.parse(JSON.stringify(this.mapState));
+            this.saveQueue = this.saveQueue
+                .catch(() => {})
+                .then(async () => {
+                    const response = await apiFetch('/save-map', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(snapshot)
+                    });
+                    if (!response.ok) throw new Error(`Save failed (${response.status})`);
+                    if (successMessage) this.status.textContent = successMessage;
+                })
+                .catch((error) => {
+                    console.error(error);
+                    this.status.textContent = 'Could not save map data. Your edits remain in this tab.';
+                });
+            return this.saveQueue;
         }
 
         isArrowKey(event) {
@@ -52,18 +261,38 @@
             this.camera.direction = [0, 0];
         }
 
+        clampCamera() {
+            const { width: mapWidth, height: mapHeight } = this.mapDimensions();
+            const halfViewWidth = this.canvas.width / 2;
+            const halfViewHeight = this.canvas.height / 2;
+
+            this.camera.x = Math.min(
+                mapWidth - halfViewWidth,
+                Math.max(-halfViewWidth, this.camera.x)
+            );
+            this.camera.y = Math.min(
+                mapHeight - halfViewHeight,
+                Math.max(-halfViewHeight, this.camera.y)
+            );
+        }
+
         setPreview(enabled) {
             this.resetCameraDirection();
 
             if (enabled) {
+                if (!this.spawn) {
+                    this.toggle.checked = false;
+                    this.status.textContent = 'Place a spawn point before starting Preview.';
+                    return;
+                }
                 this.editorCameraState = { x: this.camera.x, y: this.camera.y };
                 this.previewGame = new Game(this.ctx);
                 this.previewGame.cam = this.camera;
                 this.previewGame.utils = new Util(this.ctx, this.camera);
-                this.previewGame.p1.x = SPAWN.x;
-                this.previewGame.p1.y = SPAWN.y;
-                this.previewGame.p1.translation = null;
+                this.previewGame.applyMapState({ size: this.mapSize, spawn: this.spawn });
                 this.activeController = this.previewGame.controller;
+                this.spawnButton.disabled = true;
+                this.sizeInput.disabled = true;
                 this.status.textContent = 'Preview mode · right-click to move · arrow keys move the camera';
                 this.canvas.focus();
                 return;
@@ -73,16 +302,19 @@
             this.camera.x = this.editorCameraState.x;
             this.camera.y = this.editorCameraState.y;
             this.activeController = this.editorController;
+            this.spawnButton.disabled = false;
+            this.sizeInput.disabled = false;
             this.status.textContent = 'Editor mode · use the arrow keys to move the camera';
         }
 
-        drawEditor() {
-            this.utils.clear();
-            const x = this.utils.vpx(SPAWN.x);
-            const y = this.utils.vpy(SPAWN.y);
+        drawSpawn(spawn, preview = false) {
+            if (!spawn) return;
+            const x = this.utils.vpx(spawn.x);
+            const y = this.utils.vpy(spawn.y);
             const size = 14;
 
             this.ctx.save();
+            this.ctx.globalAlpha = preview ? .55 : 1;
             this.ctx.strokeStyle = '#dc2626';
             this.ctx.lineWidth = 3;
             this.ctx.beginPath();
@@ -98,12 +330,28 @@
             this.ctx.restore();
         }
 
+        drawEditor() {
+            this.utils.clear();
+            const dimensions = this.mapSize.match(SIZE_PATTERN);
+            const width = Number(dimensions[1]);
+            const height = Number(dimensions[2]);
+
+            this.ctx.save();
+            this.ctx.strokeStyle = '#94a3b8';
+            this.ctx.setLineDash([8, 6]);
+            this.ctx.strokeRect(this.utils.vpx(0), this.utils.vpy(0), width, height);
+            this.ctx.restore();
+            this.drawSpawn(this.spawn);
+            this.drawSpawn(this.spawnPreview, true);
+        }
+
         frame() {
             if (this.previewGame) {
                 this.previewGame.update();
                 this.previewGame.draw();
             } else {
                 this.camera.update();
+                this.clampCamera();
                 this.drawEditor();
             }
             requestAnimationFrame(this.frame);
@@ -111,10 +359,12 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        window.mapEditor = new MapEditor(
-            document.getElementById('editor-canvas'),
-            document.getElementById('preview-toggle'),
-            document.getElementById('status')
-        );
+        window.mapEditor = new MapEditor({
+            canvas: document.getElementById('editor-canvas'),
+            toggle: document.getElementById('preview-toggle'),
+            status: document.getElementById('status'),
+            spawnButton: document.getElementById('spawn-button'),
+            sizeInput: document.getElementById('map-size')
+        });
     });
 })();
