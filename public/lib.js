@@ -99,7 +99,7 @@ class Game {
         if(spawn && Number.isFinite(spawn.x) && Number.isFinite(spawn.y)) {
             this.p1.x = spawn.x
             this.p1.y = spawn.y
-            this.p1.translation = null
+            this.p1.stop()
         }
 
         this.walls = Array.isArray(mapState && mapState.walls)
@@ -127,7 +127,7 @@ class Game {
         if(x !== this.p1.x || y !== this.p1.y) {
             this.p1.x = x
             this.p1.y = y
-            this.p1.translation = null
+            this.p1.stop()
         }
     }
 
@@ -141,71 +141,7 @@ class Game {
             Math.min(maxX, Math.max(minX, x)),
             Math.min(maxY, Math.max(minY, y))
         ]
-        return this.constrainDestinationToWalls(boundaryTarget[0], boundaryTarget[1])
-    }
-
-    constrainDestinationToWalls(x, y) {
-        if(!this.walls.length) return [x, y]
-        const start = {x: this.p1.x, y: this.p1.y}
-        const dx = x - start.x
-        const dy = y - start.y
-        const distance = Math.hypot(dx, dy)
-        if(distance === 0) return [x, y]
-
-        const blockingWalls = this.walls.filter(wall => this.distanceToWall(start, wall) >= this.p1.r - 0.001)
-        if(!blockingWalls.length) return [x, y]
-        const steps = Math.max(1, Math.ceil(distance / Math.max(1, this.p1.r / 4)))
-
-        for(let step = 1; step <= steps; step++) {
-            const t = step / steps
-            const point = {x: start.x + dx * t, y: start.y + dy * t}
-            const blockingWall = blockingWalls.find(wall => this.distanceToWall(point, wall) < this.p1.r)
-            if(!blockingWall) {
-                continue
-            }
-            return this.destinationAlongWall({x, y}, blockingWall, start)
-        }
-
-        return [x, y]
-    }
-
-    destinationAlongWall(target, wall, playerPosition) {
-        const closest = this.closestPointOnWall(target, wall)
-        const wallDx = wall.end.x - wall.start.x
-        const wallDy = wall.end.y - wall.start.y
-        const wallLength = Math.hypot(wallDx, wallDy)
-        let normalX
-        let normalY
-
-        if(wallLength === 0) {
-            normalX = playerPosition.x - closest.x
-            normalY = playerPosition.y - closest.y
-            const normalLength = Math.hypot(normalX, normalY) || 1
-            normalX /= normalLength
-            normalY /= normalLength
-        } else {
-            const side = this.wallSide(playerPosition, wall)
-            const direction = side < 0 ? -1 : 1
-            normalX = -wallDy / wallLength * direction
-            normalY = wallDx / wallLength * direction
-        }
-
-        return this.constrainDestinationToBoundaries(
-            closest.x + normalX * this.p1.r,
-            closest.y + normalY * this.p1.r
-        )
-    }
-
-    constrainDestinationToBoundaries(x, y) {
-        if(this.mapWidth === null || this.mapHeight === null) return [x, y]
-        const minX = Math.min(this.p1.r, this.mapWidth / 2)
-        const maxX = Math.max(this.mapWidth - this.p1.r, this.mapWidth / 2)
-        const minY = Math.min(this.p1.r, this.mapHeight / 2)
-        const maxY = Math.max(this.mapHeight - this.p1.r, this.mapHeight / 2)
-        return [
-            Math.min(maxX, Math.max(minX, x)),
-            Math.min(maxY, Math.max(minY, y))
-        ]
+        return boundaryTarget
     }
 
     constrainCamera() {
@@ -262,26 +198,119 @@ class Game {
             }
             this.p1.x = closest.x + dx / distance * this.p1.r
             this.p1.y = closest.y + dy / distance * this.p1.r
-            this.p1.translation = null
+            this.p1.stop()
         }
         this.constrainPlayer()
     }
 
-    constrainWalls(previousPosition) {
+    resolveWallMovement(previousPosition) {
+        const intended = {x: this.p1.x - previousPosition.x, y: this.p1.y - previousPosition.y}
+        const constraints = []
+
         for(const wall of this.walls) {
-            const previousDistance = this.distanceToWall(previousPosition, wall)
-            const nextDistance = this.distanceToWall(this.p1, wall)
-            const changedSides = this.wallSide(previousPosition, wall) * this.wallSide(this.p1, wall) < 0
-            const crossedWall = changedSides && (previousDistance < this.p1.r || nextDistance < this.p1.r)
-            const enteredWall = previousDistance >= this.p1.r && nextDistance < this.p1.r
-            const movedDeeper = previousDistance < this.p1.r && nextDistance < previousDistance
-            if(enteredWall || movedDeeper || crossedWall) {
-                this.p1.x = previousPosition.x
-                this.p1.y = previousPosition.y
-                this.p1.translation = null
-                return
+            if(this.distanceToWall(this.p1, wall) >= this.p1.r) continue
+            const closest = this.closestPointOnWall(previousPosition, wall)
+            let nx = previousPosition.x - closest.x
+            let ny = previousPosition.y - closest.y
+            let distance = Math.hypot(nx, ny)
+            if(distance === 0) {
+                nx = -(wall.end.y - wall.start.y)
+                ny = wall.end.x - wall.start.x
+                distance = Math.hypot(nx, ny) || 1
+            }
+            nx /= distance
+            ny /= distance
+            constraints.push({nx, ny, minimum: -(Math.max(0, distance - this.p1.r))})
+        }
+
+        if(!constraints.length) return
+        let movement = this.solveConstrainedMovement(intended, constraints)
+        const restingOnWalls = constraints.every(constraint => constraint.minimum > -0.01)
+        if(restingOnWalls && this.p1.destination) {
+            const remainingGoal = {
+                x: this.p1.destination.x - previousPosition.x,
+                y: this.p1.destination.y - previousPosition.y
+            }
+            const contactConstraints = constraints.map(constraint => ({...constraint, minimum: 0}))
+            const allowedGoal = this.solveConstrainedMovement(remainingGoal, contactConstraints)
+            const allowedDistance = Math.hypot(allowedGoal.x, allowedGoal.y)
+            if(allowedDistance > 0) {
+                const step = Math.min(this.p1.speed, allowedDistance)
+                movement = {
+                    x: allowedGoal.x / allowedDistance * step,
+                    y: allowedGoal.y / allowedDistance * step
+                }
             }
         }
+        this.p1.x = previousPosition.x + movement.x
+        this.p1.y = previousPosition.y + movement.y
+        this.resolveWallPenetration(previousPosition)
+    }
+
+    resolveWallPenetration(previousPosition) {
+        for(let iteration = 0; iteration < 4; iteration++) {
+            const constraints = []
+            for(const wall of this.walls) {
+                const closest = this.closestPointOnWall(this.p1, wall)
+                let nx = this.p1.x - closest.x
+                let ny = this.p1.y - closest.y
+                let distance = Math.hypot(nx, ny)
+                if(distance >= this.p1.r - 1e-7) continue
+                if(distance === 0) {
+                    const previousClosest = this.closestPointOnWall(previousPosition, wall)
+                    nx = previousPosition.x - previousClosest.x
+                    ny = previousPosition.y - previousClosest.y
+                    distance = Math.hypot(nx, ny)
+                    if(distance === 0) {
+                        nx = -(wall.end.y - wall.start.y)
+                        ny = wall.end.x - wall.start.x
+                        distance = Math.hypot(nx, ny) || 1
+                    }
+                }
+                constraints.push({
+                    nx: nx / distance,
+                    ny: ny / distance,
+                    minimum: this.p1.r - distance
+                })
+            }
+            if(!constraints.length) return
+            const correction = this.solveConstrainedMovement({x: 0, y: 0}, constraints)
+            this.p1.x += correction.x
+            this.p1.y += correction.y
+        }
+    }
+
+    solveConstrainedMovement(desired, constraints) {
+        const candidates = [desired, {x: 0, y: 0}]
+        for(const constraint of constraints) {
+            const dot = constraint.nx * desired.x + constraint.ny * desired.y
+            const adjustment = constraint.minimum - dot
+            candidates.push({
+                x: desired.x + adjustment * constraint.nx,
+                y: desired.y + adjustment * constraint.ny
+            })
+        }
+        for(let first = 0; first < constraints.length; first++) {
+            for(let second = first + 1; second < constraints.length; second++) {
+                const a = constraints[first]
+                const b = constraints[second]
+                const determinant = a.nx * b.ny - a.ny * b.nx
+                if(Math.abs(determinant) < 1e-9) continue
+                candidates.push({
+                    x: (a.minimum * b.ny - a.ny * b.minimum) / determinant,
+                    y: (a.nx * b.minimum - a.minimum * b.nx) / determinant
+                })
+            }
+        }
+
+        const feasible = candidates.filter(candidate => constraints.every(constraint =>
+            constraint.nx * candidate.x + constraint.ny * candidate.y >= constraint.minimum - 1e-7
+        ))
+        feasible.sort((a, b) =>
+            (a.x - desired.x) ** 2 + (a.y - desired.y) ** 2 -
+            ((b.x - desired.x) ** 2 + (b.y - desired.y) ** 2)
+        )
+        return feasible[0] || {x: 0, y: 0}
     }
 
     update() {
@@ -289,7 +318,7 @@ class Game {
         this.p1.update();
         this.cam.update();
         this.constrainPlayer();
-        this.constrainWalls(previousPosition);
+        this.resolveWallMovement(previousPosition);
         this.constrainCamera();
     }
 
@@ -345,30 +374,29 @@ class Player {
 
     // business-logic
     speed = 4
-    translation = null
+    destination = null
 
     setDestination(x,y) {
-        let h = Math.pow((y-this.y)**2+(x-this.x)**2, 0.5)
-        if(h === 0) {
-            this.translation = null
-            return
-        }
-        let i = Math.ceil(h/this.speed)
-        this.translation = [i,[(x-this.x)/i, (y-this.y)/i],[x,y]]
+        this.destination = {x, y}
+    }
+
+    stop() {
+        this.destination = null
     }
 
     move() {
-        if(this.translation) {
-            this.translation[0]--
-            this.x += this.translation[1][0]
-            this.y += this.translation[1][1]
-
-            if(this.translation[0] == 0) {
-                this.x = this.translation[2][0]
-                this.y = this.translation[2][1]
-                this.translation = null
-            }
+        if(!this.destination) return
+        const dx = this.destination.x - this.x
+        const dy = this.destination.y - this.y
+        const distance = Math.hypot(dx, dy)
+        if(distance <= this.speed) {
+            this.x = this.destination.x
+            this.y = this.destination.y
+            this.destination = null
+            return
         }
+        this.x += dx / distance * this.speed
+        this.y += dy / distance * this.speed
     }
 
     update() {
