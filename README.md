@@ -2,10 +2,11 @@
 
 
 ## Todo List
-- [ ] Map Editor
+- [X] Map Editor
+- [ ] [Future implementation steps](FUTURE_IMPLEMENTATION.md)
 - [ ] Path Finding
-- [ ] Chat to build backend for sockets. [Chat location](https://raw.githubusercontent.com/pegasuspect/simpleMOBA/main/screenshots/2023-04-25_17-08-40.png)
-- [ ] If chat is working use the logic to build mulltiplayer moving circles
+- [ ] In-game Chat
+    - [Chat location](https://raw.githubusercontent.com/pegasuspect/simpleMOBA/main/screenshots/2023-04-25_17-08-40.png)
 
 ### Map Editor TODOS
 #### Phase-1: Create the Editor Page & Preview
