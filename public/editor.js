@@ -21,7 +21,7 @@
 
     class EditorController extends Controller {
         leftMouseDown(event) {
-            this.game.placeSpawn(event);
+            this.game.handleEditorClick(event);
         }
 
         rightMouseDown() {}
@@ -34,6 +34,8 @@
             this.toggle = elements.toggle;
             this.status = elements.status;
             this.spawnButton = elements.spawnButton;
+            this.wallsButton = elements.wallsButton;
+            this.eraserButton = elements.eraserButton;
             this.sizeInput = elements.sizeInput;
             this.ctx = this.canvas.getContext('2d');
             this.camera = new Camera();
@@ -47,13 +49,21 @@
             this.mapSize = DEFAULT_SIZE;
             this.placingSpawn = false;
             this.spawnPreview = null;
+            this.walls = [];
+            this.wallMode = false;
+            this.wallStart = null;
+            this.wallPreview = null;
+            this.eraserMode = false;
             this.saveQueue = Promise.resolve();
 
             this.onMouseDown = (event) => this.activeController.mouseDown(event);
             this.onMouseMove = (event) => {
-                if (!this.placingSpawn) return;
                 const point = this.worldPoint(event);
-                if (this.pointWithinBoundaries(point, SPAWN_INSET)) this.spawnPreview = point;
+                if (this.placingSpawn && this.pointWithinBoundaries(point, SPAWN_INSET)) {
+                    this.spawnPreview = point;
+                } else if (this.wallMode && this.wallStart && this.pointWithinBoundaries(point)) {
+                    this.wallPreview = point;
+                }
             };
             this.onContextMenu = (event) => this.activeController.contextMenu(event);
             this.onKeyDown = (event) => {
@@ -72,6 +82,8 @@
             document.addEventListener('keyup', this.onKeyUp);
             this.toggle.addEventListener('change', () => this.setPreview(this.toggle.checked));
             this.spawnButton.addEventListener('click', () => this.beginSpawnPlacement());
+            this.wallsButton.addEventListener('click', () => this.toggleWallMode());
+            this.eraserButton.addEventListener('click', () => this.toggleEraserMode());
             this.sizeInput.addEventListener('input', () => this.validateSizeInput());
             this.sizeInput.addEventListener('change', () => this.applyMapSize());
             this.sizeInput.addEventListener('keydown', (event) => {
@@ -103,9 +115,12 @@
                     (this.spawn.x !== data.spawn.x || this.spawn.y !== data.spawn.y);
                 this.mapState.spawn = { ...this.spawn };
                 this.mapState.size = this.mapSize;
+                this.walls = this.normalizeWalls(data.walls);
+                const adjustedWalls = JSON.stringify(this.walls) !== JSON.stringify(data.walls || []);
+                this.mapState.walls = this.walls.map(wall => this.copyWall(wall));
                 this.sizeInput.value = this.mapSize;
                 this.status.textContent = 'Editor mode · use the arrow keys to move the camera';
-                if (adjustedSpawn) {
+                if (adjustedSpawn || adjustedWalls) {
                     this.saveMapState('Out-of-bounds objects were moved inside the map boundaries.');
                 }
             } catch (error) {
@@ -113,10 +128,13 @@
                 this.mapState = {};
                 this.spawn = { ...DEFAULT_SPAWN };
                 this.mapSize = DEFAULT_SIZE;
+                this.walls = [];
                 this.status.textContent = 'Could not load map data; using game defaults.';
             } finally {
                 this.toggle.disabled = false;
                 this.spawnButton.disabled = false;
+                this.wallsButton.disabled = false;
+                this.eraserButton.disabled = false;
                 this.sizeInput.disabled = false;
                 this.updateSpawnButton();
             }
@@ -150,6 +168,8 @@
                 this.spawn = this.clampMapPoint(this.spawn, SPAWN_INSET);
                 this.mapState.spawn = { ...this.spawn };
             }
+            this.walls = this.normalizeWalls(this.walls);
+            this.mapState.walls = this.walls.map(wall => this.copyWall(wall));
             this.clampCamera();
             this.saveMapState('Map boundaries saved.');
         }
@@ -160,12 +180,15 @@
                 return;
             }
 
+            this.setWallMode(false);
             this.spawn = null;
             delete this.mapState.spawn;
             this.placingSpawn = true;
             this.spawnPreview = null;
             this.toggle.disabled = true;
             this.sizeInput.disabled = true;
+            this.wallsButton.disabled = true;
+            this.eraserButton.disabled = true;
             this.updateSpawnButton();
             this.status.textContent = 'Move over the map and click to place the spawn point.';
             this.saveMapState();
@@ -187,8 +210,151 @@
             this.spawnPreview = null;
             this.toggle.disabled = false;
             this.sizeInput.disabled = false;
+            this.wallsButton.disabled = false;
+            this.eraserButton.disabled = false;
             this.updateSpawnButton();
             this.saveMapState('Spawn point saved.');
+        }
+
+        handleEditorClick(event) {
+            if (this.placingSpawn) {
+                this.placeSpawn(event);
+            } else if (this.wallMode) {
+                this.placeWallPoint(event);
+            } else if (this.eraserMode) {
+                this.eraseObject(event);
+            }
+        }
+
+        toggleWallMode() {
+            this.setWallMode(!this.wallMode);
+            if (this.wallMode) this.canvas.focus();
+        }
+
+        setWallMode(enabled) {
+            if (enabled) this.setEraserMode(false);
+            this.wallMode = enabled;
+            this.wallStart = null;
+            this.wallPreview = null;
+            this.wallsButton.setAttribute('aria-pressed', String(enabled));
+            this.spawnButton.disabled = enabled;
+            this.sizeInput.disabled = enabled;
+            if (enabled) {
+                this.status.textContent = 'Wall mode · click a start point, then click an end point.';
+            } else if (!this.previewGame && !this.placingSpawn) {
+                this.status.textContent = 'Editor mode · use the arrow keys to move the camera';
+            }
+        }
+
+        toggleEraserMode() {
+            this.setEraserMode(!this.eraserMode);
+            if (this.eraserMode) this.canvas.focus();
+        }
+
+        setEraserMode(enabled) {
+            if (enabled && this.wallMode) {
+                this.wallMode = false;
+                this.wallStart = null;
+                this.wallPreview = null;
+                this.wallsButton.setAttribute('aria-pressed', 'false');
+            }
+            this.eraserMode = enabled;
+            this.eraserButton.setAttribute('aria-pressed', String(enabled));
+            this.spawnButton.disabled = enabled;
+            this.sizeInput.disabled = enabled;
+            if (enabled) {
+                this.status.textContent = 'Eraser mode · click a wall or spawn point to remove it.';
+            } else if (!this.wallMode && !this.previewGame && !this.placingSpawn) {
+                this.status.textContent = 'Editor mode · use the arrow keys to move the camera';
+            }
+        }
+
+        placeWallPoint(event) {
+            const point = this.worldPoint(event);
+            if (!this.pointWithinBoundaries(point)) {
+                this.status.textContent = 'Wall points must be inside the map boundaries.';
+                return;
+            }
+
+            if (!this.wallStart) {
+                this.wallStart = point;
+                this.wallPreview = point;
+                this.status.textContent = 'Move the mouse and click to set the wall end point.';
+                return;
+            }
+
+            if (point.x === this.wallStart.x && point.y === this.wallStart.y) {
+                this.status.textContent = 'A wall needs two different points.';
+                return;
+            }
+
+            this.walls.push({ start: this.wallStart, end: point });
+            this.mapState.walls = this.walls.map(wall => this.copyWall(wall));
+            this.wallStart = null;
+            this.wallPreview = null;
+            this.saveMapState('Wall saved · click to start another wall.');
+        }
+
+        copyWall(wall) {
+            return {
+                start: { x: wall.start.x, y: wall.start.y },
+                end: { x: wall.end.x, y: wall.end.y }
+            };
+        }
+
+        normalizeWalls(walls) {
+            if (!Array.isArray(walls)) return [];
+            return walls
+                .filter(wall => wall && this.validSpawn(wall.start) && this.validSpawn(wall.end))
+                .map(wall => ({
+                    start: this.clampMapPoint(wall.start),
+                    end: this.clampMapPoint(wall.end)
+                }))
+                .filter(wall => wall.start.x !== wall.end.x || wall.start.y !== wall.end.y);
+        }
+
+        distanceToWall(point, wall) {
+            const dx = wall.end.x - wall.start.x;
+            const dy = wall.end.y - wall.start.y;
+            const lengthSquared = dx * dx + dy * dy;
+            if (lengthSquared === 0) return Math.hypot(point.x - wall.start.x, point.y - wall.start.y);
+            const projection = Math.max(0, Math.min(1,
+                ((point.x - wall.start.x) * dx + (point.y - wall.start.y) * dy) / lengthSquared
+            ));
+            return Math.hypot(
+                point.x - (wall.start.x + projection * dx),
+                point.y - (wall.start.y + projection * dy)
+            );
+        }
+
+        eraseObject(event) {
+            const point = this.worldPoint(event);
+            const candidates = this.walls.map((wall, index) => ({
+                type: 'wall', index, distance: this.distanceToWall(point, wall)
+            }));
+            if (this.spawn) {
+                candidates.push({
+                    type: 'spawn',
+                    distance: Math.hypot(point.x - this.spawn.x, point.y - this.spawn.y)
+                });
+            }
+            candidates.sort((a, b) => a.distance - b.distance);
+            const target = candidates[0];
+            if (!target || target.distance > 16) {
+                this.status.textContent = 'No object found there. Click closer to a wall or spawn point.';
+                return;
+            }
+
+            if (target.type === 'wall') {
+                this.walls.splice(target.index, 1);
+                this.mapState.walls = this.walls.map(wall => this.copyWall(wall));
+                this.saveMapState('Wall removed.');
+            } else {
+                this.spawn = null;
+                delete this.mapState.spawn;
+                this.updateSpawnButton();
+                this.saveMapState('Spawn point removed.');
+            }
         }
 
         updateSpawnButton() {
@@ -285,14 +451,22 @@
                     this.status.textContent = 'Place a spawn point before starting Preview.';
                     return;
                 }
+                this.setWallMode(false);
+                this.setEraserMode(false);
                 this.editorCameraState = { x: this.camera.x, y: this.camera.y };
                 this.previewGame = new Game(this.ctx);
                 this.previewGame.cam = this.camera;
                 this.previewGame.utils = new Util(this.ctx, this.camera);
-                this.previewGame.applyMapState({ size: this.mapSize, spawn: this.spawn });
+                this.previewGame.applyMapState({
+                    size: this.mapSize,
+                    spawn: this.spawn,
+                    walls: this.walls
+                });
                 this.activeController = this.previewGame.controller;
                 this.spawnButton.disabled = true;
                 this.sizeInput.disabled = true;
+                this.wallsButton.disabled = true;
+                this.eraserButton.disabled = true;
                 this.status.textContent = 'Preview mode · right-click to move · arrow keys move the camera';
                 this.canvas.focus();
                 return;
@@ -304,6 +478,8 @@
             this.activeController = this.editorController;
             this.spawnButton.disabled = false;
             this.sizeInput.disabled = false;
+            this.wallsButton.disabled = false;
+            this.eraserButton.disabled = false;
             this.status.textContent = 'Editor mode · use the arrow keys to move the camera';
         }
 
@@ -330,6 +506,20 @@
             this.ctx.restore();
         }
 
+        drawWall(wall, preview = false) {
+            if (!wall) return;
+            this.ctx.save();
+            this.ctx.globalAlpha = preview ? .55 : 1;
+            this.ctx.strokeStyle = '#111827';
+            this.ctx.lineWidth = 4;
+            this.ctx.lineCap = 'round';
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.utils.vpx(wall.start.x), this.utils.vpy(wall.start.y));
+            this.ctx.lineTo(this.utils.vpx(wall.end.x), this.utils.vpy(wall.end.y));
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
+
         drawEditor() {
             this.utils.clear();
             const dimensions = this.mapSize.match(SIZE_PATTERN);
@@ -341,6 +531,10 @@
             this.ctx.setLineDash([8, 6]);
             this.ctx.strokeRect(this.utils.vpx(0), this.utils.vpy(0), width, height);
             this.ctx.restore();
+            this.walls.forEach(wall => this.drawWall(wall));
+            if (this.wallStart && this.wallPreview) {
+                this.drawWall({ start: this.wallStart, end: this.wallPreview }, true);
+            }
             this.drawSpawn(this.spawn);
             this.drawSpawn(this.spawnPreview, true);
         }
@@ -364,6 +558,8 @@
             toggle: document.getElementById('preview-toggle'),
             status: document.getElementById('status'),
             spawnButton: document.getElementById('spawn-button'),
+            wallsButton: document.getElementById('walls-button'),
+            eraserButton: document.getElementById('eraser-button'),
             sizeInput: document.getElementById('map-size')
         });
     });

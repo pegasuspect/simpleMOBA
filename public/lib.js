@@ -78,6 +78,7 @@ class Game {
     id = -1
     mapWidth = null
     mapHeight = null
+    walls = []
 
     constructor(ctx, socket, id) {
         this.ctx = ctx
@@ -101,7 +102,16 @@ class Game {
             this.p1.translation = null
         }
 
+        this.walls = Array.isArray(mapState && mapState.walls)
+            ? mapState.walls.filter(wall =>
+                wall &&
+                wall.start && Number.isFinite(wall.start.x) && Number.isFinite(wall.start.y) &&
+                wall.end && Number.isFinite(wall.end.x) && Number.isFinite(wall.end.y)
+            )
+            : []
+
         this.constrainPlayer()
+        this.resolveWallOverlaps()
         this.constrainCamera()
     }
 
@@ -127,6 +137,71 @@ class Game {
         const maxX = Math.max(this.mapWidth - this.p1.r, this.mapWidth / 2)
         const minY = Math.min(this.p1.r, this.mapHeight / 2)
         const maxY = Math.max(this.mapHeight - this.p1.r, this.mapHeight / 2)
+        const boundaryTarget = [
+            Math.min(maxX, Math.max(minX, x)),
+            Math.min(maxY, Math.max(minY, y))
+        ]
+        return this.constrainDestinationToWalls(boundaryTarget[0], boundaryTarget[1])
+    }
+
+    constrainDestinationToWalls(x, y) {
+        if(!this.walls.length) return [x, y]
+        const start = {x: this.p1.x, y: this.p1.y}
+        const dx = x - start.x
+        const dy = y - start.y
+        const distance = Math.hypot(dx, dy)
+        if(distance === 0) return [x, y]
+
+        const blockingWalls = this.walls.filter(wall => this.distanceToWall(start, wall) >= this.p1.r - 0.001)
+        if(!blockingWalls.length) return [x, y]
+        const steps = Math.max(1, Math.ceil(distance / Math.max(1, this.p1.r / 4)))
+
+        for(let step = 1; step <= steps; step++) {
+            const t = step / steps
+            const point = {x: start.x + dx * t, y: start.y + dy * t}
+            const blockingWall = blockingWalls.find(wall => this.distanceToWall(point, wall) < this.p1.r)
+            if(!blockingWall) {
+                continue
+            }
+            return this.destinationAlongWall({x, y}, blockingWall, start)
+        }
+
+        return [x, y]
+    }
+
+    destinationAlongWall(target, wall, playerPosition) {
+        const closest = this.closestPointOnWall(target, wall)
+        const wallDx = wall.end.x - wall.start.x
+        const wallDy = wall.end.y - wall.start.y
+        const wallLength = Math.hypot(wallDx, wallDy)
+        let normalX
+        let normalY
+
+        if(wallLength === 0) {
+            normalX = playerPosition.x - closest.x
+            normalY = playerPosition.y - closest.y
+            const normalLength = Math.hypot(normalX, normalY) || 1
+            normalX /= normalLength
+            normalY /= normalLength
+        } else {
+            const side = this.wallSide(playerPosition, wall)
+            const direction = side < 0 ? -1 : 1
+            normalX = -wallDy / wallLength * direction
+            normalY = wallDx / wallLength * direction
+        }
+
+        return this.constrainDestinationToBoundaries(
+            closest.x + normalX * this.p1.r,
+            closest.y + normalY * this.p1.r
+        )
+    }
+
+    constrainDestinationToBoundaries(x, y) {
+        if(this.mapWidth === null || this.mapHeight === null) return [x, y]
+        const minX = Math.min(this.p1.r, this.mapWidth / 2)
+        const maxX = Math.max(this.mapWidth - this.p1.r, this.mapWidth / 2)
+        const minY = Math.min(this.p1.r, this.mapHeight / 2)
+        const maxY = Math.max(this.mapHeight - this.p1.r, this.mapHeight / 2)
         return [
             Math.min(maxX, Math.max(minX, x)),
             Math.min(maxY, Math.max(minY, y))
@@ -141,16 +216,87 @@ class Game {
         this.cam.y = Math.min(this.mapHeight - halfHeight, Math.max(-halfHeight, this.cam.y))
     }
 
+    closestPointOnWall(point, wall) {
+        const dx = wall.end.x - wall.start.x
+        const dy = wall.end.y - wall.start.y
+        const lengthSquared = dx * dx + dy * dy
+        if(lengthSquared === 0) {
+            return {x: wall.start.x, y: wall.start.y}
+        }
+        const projection = Math.max(0, Math.min(1,
+            ((point.x - wall.start.x) * dx + (point.y - wall.start.y) * dy) / lengthSquared
+        ))
+        return {
+            x: wall.start.x + projection * dx,
+            y: wall.start.y + projection * dy
+        }
+    }
+
+    distanceToWall(point, wall) {
+        const closest = this.closestPointOnWall(point, wall)
+        return Math.hypot(point.x - closest.x, point.y - closest.y)
+    }
+
+    wallSide(point, wall) {
+        return (wall.end.x - wall.start.x) * (point.y - wall.start.y) -
+            (wall.end.y - wall.start.y) * (point.x - wall.start.x)
+    }
+
+    resolveWallOverlaps() {
+        for(const wall of this.walls) {
+            const closest = this.closestPointOnWall(this.p1, wall)
+            let dx = this.p1.x - closest.x
+            let dy = this.p1.y - closest.y
+            let distance = Math.hypot(dx, dy)
+            if(distance >= this.p1.r) continue
+
+            if(distance === 0) {
+                dx = -(wall.end.y - wall.start.y)
+                dy = wall.end.x - wall.start.x
+                distance = Math.hypot(dx, dy)
+                if(distance === 0) {
+                    dx = 1
+                    dy = 0
+                    distance = 1
+                }
+            }
+            this.p1.x = closest.x + dx / distance * this.p1.r
+            this.p1.y = closest.y + dy / distance * this.p1.r
+            this.p1.translation = null
+        }
+        this.constrainPlayer()
+    }
+
+    constrainWalls(previousPosition) {
+        for(const wall of this.walls) {
+            const previousDistance = this.distanceToWall(previousPosition, wall)
+            const nextDistance = this.distanceToWall(this.p1, wall)
+            const changedSides = this.wallSide(previousPosition, wall) * this.wallSide(this.p1, wall) < 0
+            const crossedWall = changedSides && (previousDistance < this.p1.r || nextDistance < this.p1.r)
+            const enteredWall = previousDistance >= this.p1.r && nextDistance < this.p1.r
+            const movedDeeper = previousDistance < this.p1.r && nextDistance < previousDistance
+            if(enteredWall || movedDeeper || crossedWall) {
+                this.p1.x = previousPosition.x
+                this.p1.y = previousPosition.y
+                this.p1.translation = null
+                return
+            }
+        }
+    }
+
     update() {
+        const previousPosition = {x: this.p1.x, y: this.p1.y}
         this.p1.update();
         this.cam.update();
         this.constrainPlayer();
+        this.constrainWalls(previousPosition);
         this.constrainCamera();
     }
 
     draw() {
         this.utils.clear()
         this.drawMapBoundary()
+        this.drawWalls()
         this.p1.draw(this.utils)
         for (let i = 0; i < this.otherPlayers.length; i++) {
             const player = this.otherPlayers[i];
@@ -171,6 +317,20 @@ class Game {
             this.mapWidth,
             this.mapHeight
         )
+        this.ctx.restore()
+    }
+
+    drawWalls() {
+        this.ctx.save()
+        this.ctx.strokeStyle = '#111827'
+        this.ctx.lineWidth = 4
+        this.ctx.lineCap = 'round'
+        for(const wall of this.walls) {
+            this.ctx.beginPath()
+            this.ctx.moveTo(this.utils.vpx(wall.start.x), this.utils.vpy(wall.start.y))
+            this.ctx.lineTo(this.utils.vpx(wall.end.x), this.utils.vpy(wall.end.y))
+            this.ctx.stroke()
+        }
         this.ctx.restore()
     }
 }

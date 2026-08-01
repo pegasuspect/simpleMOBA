@@ -65,6 +65,12 @@
       background: #e5e7eb;
     }
 
+    .toolbar button[aria-pressed="true"] {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #fff;
+    }
+
     .toolbar label {
       display: grid;
       gap: 4px;
@@ -132,6 +138,8 @@
     </div>
     <div class="toolbar" aria-label="Map editor toolbar">
       <button id="spawn-button" type="button" disabled>Remove Spawn</button>
+      <button id="walls-button" type="button" aria-pressed="false" disabled>Walls</button>
+      <button id="eraser-button" type="button" aria-pressed="false" disabled>Eraser</button>
       <label for="map-size">
         Map boundaries
         <input id="map-size" type="text" value="800x600" inputmode="numeric" pattern="[0-9]+x[0-9]+" disabled>
