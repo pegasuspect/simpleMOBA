@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Map Editor - simpleMOBA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        canvas {
+            margin: auto;
+            width: 800px;
+            height: 600px;
+            border: 1px solid #000000;
+            background-color: white;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 840px;
+            padding: 10px;
+            background-color: #e0e0e0;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .toolbar-left {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .spawn-point {
+            width: 20px;
+            height: 20px;
+            background-color: red;
+            position: absolute;
+            transform: translate(-50%, -50%);
+            border-radius: 3px;
+        }
+        .spawn-cross {
+            width: 10px;
+            height: 10px;
+            background-color: white;
+            position: absolute;
+            top: 5px;
+            left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <button id="previewBtn">Preview</button>
+            </div>
+        </div>
+        <canvas id="myCanvas"></canvas>
+    </div>
+    
+    <!-- Spawn point indicator -->
+    <div id="spawnIndicator" class="spawn-point">
+        <div class="spawn-cross"></div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="lib.js"></script>
+    <script>
+        // Map Editor state
+        let editorMode = true;
+        let spawnPoint = { x: 400, y: 300 };
+        
+        document.addEventListener("DOMContentLoaded", () => {
+            var c = document.getElementById("myCanvas");
+            var ctx = c.getContext("2d");
+            var socket = io();
+            
+            // Create game instance
+            window.game = new Game(ctx, socket, -1);
+            
+            // Set up spawn point indicator
+            var spawnIndicator = document.getElementById('spawnIndicator');
+            
+            // Handle preview toggle
+            document.getElementById('previewBtn').addEventListener('click', function() {
+                if (editorMode) {
+                    // Switch to game mode
+                    editorMode = false;
+                    this.textContent = 'Editor';
+                    this.style.backgroundColor = '#f44336';
+                    
+                    // Hide spawn indicator in game mode
+                    spawnIndicator.style.display = 'none';
+                } else {
+                    // Switch back to editor mode
+                    editorMode = true;
+                    this.textContent = 'Preview';
+                    this.style.backgroundColor = '#4CAF50';
+                    
+                    // Show spawn indicator in editor mode
+                    spawnIndicator.style.display = 'block';
+                }
+            });
+            
+            // Update spawn point position on canvas
+            function updateSpawnPoint() {
+                var rect = c.getBoundingClientRect();
+                spawnIndicator.style.left = (rect.left + window.game.cam.x + spawnPoint.x - 10) + 'px';
+                spawnIndicator.style.top = (rect.top + window.game.cam.y + spawnPoint.y - 10) + 'px';
+            }
+            
+            // Initial position
+            updateSpawnPoint();
+            
+            // Update on camera movement
+            setInterval(updateSpawnPoint, 50);
+            
+            socket.on('id', (id) => {
+                if (window.game && window.game.id === -1) window.game.id = id;
+            });
+            
+            setInterval(() => {
+                if (window.game && window.game.id !== -1) {
+                    socket.emit('position', {
+                        x: window.game.p1.x,
+                        y: window.game.p1.y,
+                        id: window.game.id
+                    });
+                }
+            }, 70);
+            
+            socket.on('position', function (otherPlayers) {
+                window.game.otherPlayers = otherPlayers;
+            });
+            
+            // Event listeners for camera movement and mouse
+            c.addEventListener("mousedown", window.game.controller.mouseDown.bind(window.game.controller));
+            document.addEventListener("keydown", window.game.controller.keyDown.bind(window.game.controller));
+            document.addEventListener("keyup", window.game.controller.keyUp.bind(window.game.controller));
+            
+            // Main game loop
+            function main() {
+                window.requestAnimationFrame(main);
+                if (editorMode) {
+                    // In editor mode, only update camera and draw spawn point
+                    window.game.cam.update();
+                    ctx.clearRect(0, 0, c.width, c.height);
+                    
+                    // Draw grid background
+                    ctx.strokeStyle = '#e0e0e0';
+                    ctx.lineWidth = 1;
+                    for (let x = window.game.cam.x % 50; x < c.width; x += 50) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, c.height);
+                        ctx.stroke();
+                    }
+                    for (let y = window.game.cam.y % 50; y < c.height; y += 50) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(c.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // Draw spawn point
+                    ctx.fillStyle = 'red';
+                    ctx.beginPath();
+                    ctx.arc(spawnPoint.x - window.game.cam.x, spawnPoint.y - window.game.cam.y, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Draw cross
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(spawnPoint.x - window.game.cam.x - 5, spawnPoint.y - window.game.cam.y - 1, 10, 2);
+                    ctx.fillRect(spawnPoint.x - window.game.cam.x - 1, spawnPoint.y - window.game.cam.y - 5, 2, 10);
+                } else {
+                    // In game mode, run the actual game
+                    window.game.update();
+                    window.game.draw();
+                }
+            }
+            
+            main();
+        });
+    </script>
+</body>
+</html>

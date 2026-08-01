@@ -12,6 +12,11 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
+// Map Editor route
+app.get('/map-editor', (req, res) => {
+  res.sendFile(__dirname + '/map-editor.html');
+});
+
 io.on('connection', (socket) => {
   socket.on('position', player => {
     let p = players.find(x => x.id === player.id);
