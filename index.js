@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
@@ -6,10 +8,34 @@ const port = process.env.PORT || 3000;
 let id = 0;
 let players = [];
 
+const MAP_STATE_FILE = path.join(__dirname, 'map-state.json');
+
 app.use(express.static('public'));
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
+});
+
+app.get('/editor', (req, res) => {
+  res.sendFile(__dirname + '/editor.html');
+});
+
+app.get('/map-state', (req, res) => {
+  fs.readFile(MAP_STATE_FILE, (err, data) => {
+    if (err) {
+      if (err.code === 'ENOENT') return res.json({});
+      return res.status(500).json({ error: err.message });
+    }
+    res.type('json').send(data);
+  });
+});
+
+app.post('/save-map', (req, res) => {
+  fs.writeFile(MAP_STATE_FILE, JSON.stringify(req.body, null, 2), err => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true });
+  });
 });
 
 io.on('connection', (socket) => {

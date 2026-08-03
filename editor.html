@@ -1,0 +1,213 @@
+<html>
+
+<head>
+    <style>
+        canvas {
+            margin: auto;
+            width: 800px;
+            height: 600px;
+            border: 1px solid #000000;
+        }
+
+        div.lola {
+            margin: auto;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+        }
+
+        .toolbar {
+            margin: auto;
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 800px;
+            justify-content: flex-start;
+        }
+
+        .toolbar input[type=text] {
+            width: 90px;
+        }
+
+        .toolbar .spacer {
+            flex: 1;
+        }
+
+        button.pressed {
+            background-color: #90ee90;
+        }
+    </style>
+</head>
+
+<body>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+
+        document.addEventListener("DOMContentLoaded", () => {
+            var c = document.getElementById("myCanvas");
+            var ctx = c.getContext("2d");
+            var editor = new Editor(ctx);
+            window.editor = editor;
+
+            c.addEventListener("mousedown", editor.controller.mouseDown.bind(editor.controller))
+            c.addEventListener("contextmenu", editor.controller.contextMenu.bind(editor.controller))
+            c.addEventListener("mousemove", editor.controller.mouseMove.bind(editor.controller))
+            document.addEventListener("keydown", editor.controller.keyDown.bind(editor.controller))
+            document.addEventListener("keyup", editor.controller.keyUp.bind(editor.controller))
+
+            var previewBtn = document.getElementById("previewBtn");
+            var spawnBtn = document.getElementById("spawnBtn");
+            var wallsBtn = document.getElementById("wallsBtn");
+            var sizeInput = document.getElementById("sizeInput");
+
+            function setControlsDisabled(disabled) {
+                previewBtn.disabled = disabled;
+                spawnBtn.disabled = disabled;
+                wallsBtn.disabled = disabled;
+                sizeInput.disabled = disabled;
+            }
+
+            function syncSpawnButton() {
+                if (editor.placingSpawn) {
+                    spawnBtn.textContent = "Place Spawn";
+                } else if (editor.spawn) {
+                    spawnBtn.textContent = "Remove Spawn";
+                } else {
+                    spawnBtn.textContent = "Spawn";
+                }
+            }
+
+            function saveMap() {
+                fetch('/save-map', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ spawn: editor.spawn, mapSize: editor.mapSize, walls: editor.walls })
+                });
+            }
+
+            function applyState(state) {
+                if (state.mapSize) editor.mapSize = state.mapSize;
+                if (state.spawn) editor.spawn = state.spawn;
+                if (state.walls) editor.walls = state.walls;
+                sizeInput.value = editor.mapSize.w + "x" + editor.mapSize.h;
+                syncSpawnButton();
+            }
+
+            fetch('/map-state').then(r => r.json()).then(applyState);
+
+            editor.onSpawnPlaced = () => {
+                setControlsDisabled(false);
+                syncSpawnButton();
+                saveMap();
+            };
+
+            editor.onWallAdded = () => {
+                saveMap();
+            };
+
+            spawnBtn.addEventListener("click", () => {
+                if (editor.placingWall) return;
+                if (editor.spawn) {
+                    // Remove spawn and enter placement mode
+                    editor.spawn = null;
+                    editor.placingSpawn = true;
+                    setControlsDisabled(true);
+                    spawnBtn.disabled = false;
+                    syncSpawnButton();
+                    saveMap();
+                    return;
+                }
+                // No spawn yet: enter placement mode
+                editor.placingSpawn = true;
+                setControlsDisabled(true);
+                spawnBtn.disabled = false;
+                syncSpawnButton();
+            });
+
+            function setWallMode(on) {
+                editor.placingWall = on;
+                editor.wallStart = null;
+                editor.wallEnd = null;
+                if (on) {
+                    setControlsDisabled(true);
+                    wallsBtn.disabled = false;
+                    wallsBtn.classList.add("pressed");
+                } else {
+                    setControlsDisabled(false);
+                    wallsBtn.classList.remove("pressed");
+                }
+            }
+
+            wallsBtn.addEventListener("click", () => {
+                if (editor.placingSpawn || editor.previewing) return;
+                setWallMode(!editor.placingWall);
+            });
+
+            function validateSize(v) {
+                var m = /^(\d+)x(\d+)$/.exec(v.trim());
+                if (!m) return null;
+                return { w: parseInt(m[1], 10), h: parseInt(m[2], 10) };
+            }
+
+            sizeInput.addEventListener("change", () => {
+                var parsed = validateSize(sizeInput.value);
+                if (parsed) {
+                    editor.mapSize = parsed;
+                    sizeInput.value = parsed.w + "x" + parsed.h;
+                    saveMap();
+                } else {
+                    sizeInput.value = editor.mapSize.w + "x" + editor.mapSize.h;
+                }
+            });
+
+            previewBtn.addEventListener("click", () => {
+                if (editor.placingSpawn) return;
+                if (editor.placingWall) setWallMode(false);
+                editor.previewing = !editor.previewing;
+                if (editor.previewing) {
+                    editor.p1 = new Player();
+                    var m = editor.mapSize;
+                    editor.p1.bounds = { minX: 0, minY: 0, maxX: m.w, maxY: m.h };
+                    editor.p1.walls = editor.walls;
+                    if (editor.spawn) {
+                        editor.p1.x = editor.spawn.x;
+                        editor.p1.y = editor.spawn.y;
+                    } else {
+                        editor.p1.x = m.w / 2;
+                        editor.p1.y = m.h / 2;
+                    }
+                    previewBtn.textContent = "Stop Preview";
+                    setControlsDisabled(true);
+                    previewBtn.disabled = false;
+                } else {
+                    previewBtn.textContent = "Preview";
+                    setControlsDisabled(false);
+                    saveMap();
+                }
+            });
+
+            window.main = () => {
+                window.requestAnimationFrame(main);
+                editor.update()
+                editor.draw()
+            };
+
+            main();
+        });
+    </script>
+
+    <script src="lib.js"></script>
+    <div class="toolbar">
+        <button id="previewBtn">Preview</button>
+        <button id="spawnBtn">Spawn</button>
+        <button id="wallsBtn">Walls</button>
+        <input id="sizeInput" type="text" value="800x600"></input>
+        <span class="spacer"></span>
+    </div>
+    <div class="lola">
+        <canvas id="myCanvas" width="800" height="600"></canvas>
+    </div>
+</body>
+
+</html>
