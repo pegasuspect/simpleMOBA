@@ -122,6 +122,44 @@ app.delete('/maps/:name', (req, res) => {
 // The numeric `id` is still assigned for game-entity rendering.
 const users = new Map();
 
+// --- Chat history persistence ---
+// Messages are kept in memory and flushed to chat-history.json periodically.
+// Capped at MAX_HISTORY to avoid unbounded growth.
+const CHAT_FILE = path.join(__dirname, 'chat-history.json');
+const MAX_HISTORY = 200;
+let chatHistory = [];
+let chatDirty = false;
+
+function loadChatHistory() {
+  try {
+    if (fs.existsSync(CHAT_FILE)) {
+      const data = fs.readFileSync(CHAT_FILE, 'utf8');
+      const arr = JSON.parse(data);
+      if (Array.isArray(arr)) {
+        chatHistory = arr.slice(-MAX_HISTORY);
+        console.log(`Chat history loaded: ${chatHistory.length} message(s)`);
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to load chat history: ${err.message}`);
+  }
+}
+
+function saveChatHistory() {
+  if (!chatDirty) return;
+  try {
+    fs.writeFileSync(CHAT_FILE, JSON.stringify(chatHistory, null, 2));
+    chatDirty = false;
+  } catch (err) {
+    console.error(`Failed to save chat history: ${err.message}`);
+  }
+}
+
+loadChatHistory();
+
+// Flush chat history to disk every 5 seconds (debounced)
+setInterval(saveChatHistory, 5000);
+
 // Sanitize usernames: trim, max 20 chars, alphanumeric + underscore/dash
 function sanitizeUsername(name) {
   if (typeof name !== 'string') return null;
@@ -147,6 +185,9 @@ io.on('connection', (socket) => {
   // Send the player their numeric id (used for game entity rendering)
   socket.emit('id', playerId);
 
+  // Send chat history so new/reconnecting clients see previous messages
+  socket.emit('chatHistory', chatHistory);
+
   socket.on('setUsername', (name, ack) => {
     const user = users.get(socket.id);
     if (!user) return;
@@ -167,12 +208,16 @@ io.on('connection', (socket) => {
     if (typeof msg !== 'string') return;
     const text = msg.trim().slice(0, 500);
     if (!text) return;
-    io.emit('chat', {
+    const entry = {
       id: user.id,
       username: user.username,
       text: text,
       timestamp: Date.now(),
-    });
+    };
+    chatHistory.push(entry);
+    if (chatHistory.length > MAX_HISTORY) chatHistory.shift();
+    chatDirty = true;
+    io.emit('chat', entry);
   });
 
   socket.on('position', (player) => {

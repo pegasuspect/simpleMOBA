@@ -122,6 +122,9 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
 
+# Chat history (runtime data)
+chat-history.json
+
 # yarn v2
 .yarn/cache
 .yarn/unplugged

@@ -386,6 +386,16 @@
                 addChatMessage(msg);
             });
 
+            // Load chat history on connect (persisted on server)
+            socket.on('chatHistory', function(history) {
+                chatMessages.innerHTML = '';
+                if (history && history.length > 0) {
+                    history.forEach(function(msg) {
+                        addChatMessage(msg);
+                    });
+                }
+            });
+
             chatInput.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
