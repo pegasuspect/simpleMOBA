@@ -9,9 +9,14 @@ let id = 0;
 let players = [];
 
 app.use(express.static('public'));
+app.use(express.json());  // for POST body parsing
 
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
+});
+
+app.get('/editor', (req, res) => {
+  res.sendFile(__dirname + '/editor.html');
 });
 
 // --- Map serving endpoint --------------------------------------------------
@@ -53,6 +58,62 @@ app.get('/maps', (req, res) => {
     res.json(files);
   } catch (err) {
     res.status(500).json({ error: `Failed to list maps: ${err.message}` });
+  }
+});
+
+// Save a map to disk
+// POST /maps/:name  body = full map JSON
+app.post('/maps/:name', (req, res) => {
+  const fileName = path.basename(req.params.name);
+  if (!fileName.endsWith('.json')) {
+    return res.status(400).json({ error: 'Map name must end with .json' });
+  }
+
+  const filePath = path.join(MAPS_DIR, fileName);
+
+  // Prevent path traversal
+  if (!filePath.startsWith(MAPS_DIR)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  // Basic validation — must have cols and rows
+  const data = req.body;
+  if (!data || typeof data.cols !== 'number' || typeof data.rows !== 'number') {
+    return res.status(400).json({ error: 'Invalid map data: missing cols/rows' });
+  }
+
+  // Ensure maps directory exists
+  if (!fs.existsSync(MAPS_DIR)) {
+    fs.mkdirSync(MAPS_DIR, { recursive: true });
+  }
+
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    console.log(`Map saved: ${fileName} (${(JSON.stringify(data).length / 1024).toFixed(1)} KB)`);
+    res.json({ success: true, name: fileName.replace(/\.json$/, '') });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to save map: ${err.message}` });
+  }
+});
+
+// Delete a map
+app.delete('/maps/:name', (req, res) => {
+  const fileName = path.basename(req.params.name);
+  const filePath = path.join(MAPS_DIR, fileName);
+
+  if (!filePath.startsWith(MAPS_DIR)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: `Map not found: ${fileName}` });
+  }
+
+  try {
+    fs.unlinkSync(filePath);
+    console.log(`Map deleted: ${fileName}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to delete map: ${err.message}` });
   }
 });
 

@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SimpleMOBA — Map Editor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; display: flex; height: 100vh; overflow: hidden; }
+
+        /* --- Top bar --- */
+        #topbar {
+            height: 44px;
+            background: #16213e;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            border-bottom: 1px solid #0d1b2a;
+            flex-shrink: 0;
+        }
+        #topbar h1 { font-size: 16px; font-weight: 600; color: #e94560; white-space: nowrap; }
+        #topbar .spacer { flex: 1; }
+        #topbar button {
+            background: #0f3460; color: #eee; border: 1px solid #1a4a7a;
+            padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px;
+        }
+        #topbar button:hover { background: #1a4a7a; }
+        #topbar button.danger { border-color: #e94560; color: #e94560; }
+        #topbar button.danger:hover { background: #e94560; color: #fff; }
+        #mapNameInput {
+            background: #0d1b2a; color: #eee; border: 1px solid #1a4a7a;
+            padding: 5px 10px; border-radius: 4px; font-size: 13px; width: 180px;
+        }
+        #statusMsg { font-size: 12px; color: #888; margin-left: 8px; }
+
+        /* --- Left sidebar (tools) --- */
+        #sidebar {
+            width: 220px;
+            background: #16213e;
+            border-right: 1px solid #0d1b2a;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .panel { padding: 10px 12px; border-bottom: 1px solid #0d1b2a; }
+        .panel h3 { font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 8px; letter-spacing: 1px; }
+
+        /* Tool buttons */
+        .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .tool-btn {
+            background: #0d1b2a; color: #ccc; border: 1px solid #1a4a7a;
+            padding: 8px; border-radius: 4px; cursor: pointer; font-size: 12px;
+            text-align: center; transition: all 0.15s;
+        }
+        .tool-btn:hover { background: #1a4a7a; }
+        .tool-btn.active { background: #e94560; border-color: #e94560; color: #fff; }
+
+        /* Terrain palette */
+        .terrain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .terrain-btn {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 8px; border-radius: 4px; cursor: pointer;
+            border: 2px solid transparent; font-size: 11px; transition: all 0.15s;
+        }
+        .terrain-btn:hover { border-color: #555; }
+        .terrain-btn.active { border-color: #e94560; }
+        .terrain-swatch { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; border: 1px solid #333; }
+
+        /* Entity palette */
+        .entity-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
+        .entity-btn {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 8px; border-radius: 4px; cursor: pointer;
+            border: 2px solid transparent; font-size: 11px; transition: all 0.15s;
+            background: #0d1b2a;
+        }
+        .entity-btn:hover { border-color: #555; }
+        .entity-btn.active { border-color: #e94560; background: #1a1a3e; }
+        .entity-shape { width: 14px; height: 14px; flex-shrink: 0; }
+
+        /* Brush size */
+        #brushSize { width: 100%; accent-color: #e94560; }
+        #brushSizeLabel { font-size: 11px; color: #888; }
+
+        /* Team selector */
+        .team-select { display: flex; gap: 6px; }
+        .team-btn {
+            flex: 1; padding: 4px; border-radius: 4px; cursor: pointer;
+            border: 2px solid transparent; font-size: 11px; text-align: center;
+        }
+        .team-btn.active { border-color: #e94560; }
+
+        /* --- Canvas area --- */
+        #canvasArea {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            background: #0a0a0a; position: relative; overflow: hidden;
+        }
+        #editorCanvas {
+            cursor: crosshair;
+            border: 1px solid #333;
+        }
+
+        /* --- Right sidebar (minimap + info) --- */
+        #rightbar {
+            width: 200px;
+            background: #16213e;
+            border-left: 1px solid #0d1b2a;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        #minimapCanvas {
+            width: 180px; height: 180px;
+            border: 1px solid #333; border-radius: 4px;
+            display: block; margin: 0 auto;
+            cursor: pointer;
+        }
+        #infoPanel { padding: 10px 12px; font-size: 11px; color: #888; }
+        #infoPanel .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        #infoPanel .info-label { color: #666; }
+        #infoPanel .info-value { color: #ccc; }
+
+        /* Checkbox style */
+        .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-top: 6px; }
+        .checkbox-row input { accent-color: #e94560; }
+
+        /* Select dropdown */
+        select {
+            background: #0d1b2a; color: #eee; border: 1px solid #1a4a7a;
+            padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 100%;
+        }
+
+        /* New map dialog */
+        #newMapDialog {
+            display: none; position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: #16213e; padding: 24px; border-radius: 8px;
+            border: 1px solid #1a4a7a; z-index: 100; gap: 12px;
+            flex-direction: column; min-width: 300px;
+        }
+        #newMapDialog.show { display: flex; }
+        #newMapDialog label { font-size: 12px; color: #888; }
+        #newMapDialog input {
+            background: #0d1b2a; color: #eee; border: 1px solid #1a4a7a;
+            padding: 6px 10px; border-radius: 4px; font-size: 13px;
+        }
+        #newMapDialog .dialog-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+        #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+        #overlay.show { display: block; }
+    </style>
+</head>
+
+<body>
+    <!-- Top bar -->
+    <div id="topbar">
+        <h1>🗺️ Map Editor</h1>
+        <select id="mapSelect"><option value="">— Load Map —</option></select>
+        <input type="text" id="mapNameInput" placeholder="map-name" value="untitled">
+        <button id="btnSave">💾 Save</button>
+        <button id="btnNew">📄 New</button>
+        <button id="btnPlay" >▶ Test Play</button>
+        <span class="spacer"></span>
+        <span id="statusMsg">Ready</span>
+    </div>
+
+    <div style="display: flex; flex: 1; overflow: hidden;">
+        <!-- Left sidebar -->
+        <div id="sidebar">
+            <!-- Tools -->
+            <div class="panel">
+                <h3>Tools</h3>
+                <div class="tool-grid" id="toolGrid">
+                    <div class="tool-btn active" data-tool="brush">🖌️ Brush</div>
+                    <div class="tool-btn" data-tool="fill">🪣 Fill</div>
+                    <div class="tool-btn" data-tool="entity">📍 Entity</div>
+                    <div class="tool-btn" data-tool="select">↖ Select</div>
+                </div>
+            </div>
+
+            <!-- Brush size -->
+            <div class="panel" id="brushPanel">
+                <h3>Brush Size</h3>
+                <input type="range" id="brushSize" min="1" max="10" value="1">
+                <div id="brushSizeLabel">1 tile</div>
+            </div>
+
+            <!-- Terrain palette -->
+            <div class="panel" id="terrainPanel">
+                <h3>Terrain</h3>
+                <div class="terrain-grid" id="terrainGrid"></div>
+            </div>
+
+            <!-- Entity palette -->
+            <div class="panel" id="entityPanel" style="display:none;">
+                <h3>Entity Type</h3>
+                <div class="entity-grid" id="entityGrid"></div>
+                <h3 style="margin-top:10px;">Team</h3>
+                <div class="team-select" id="teamSelect">
+                    <div class="team-btn" data-team="0" style="background:#0d1b2a;">Neutral</div>
+                    <div class="team-btn active" data-team="1" style="background:#1a2a5e;">Blue</div>
+                    <div class="team-btn" data-team="2" style="background:#5e1a1a;">Red</div>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="entityRadius" checked>
+                    <label for="entityRadius">Auto radius (15px)</label>
+                </div>
+            </div>
+
+            <!-- View options -->
+            <div class="panel">
+                <h3>View</h3>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="showGrid" checked>
+                    <label for="showGrid">Show grid</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="showEntities" checked>
+                    <label for="showEntities">Show entities</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="showLanes" checked>
+                    <label for="showLanes">Show lanes</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="showWaypoints">
+                    <label for="showWaypoints">Show waypoints</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas -->
+        <div id="canvasArea">
+            <canvas id="editorCanvas" width="800" height="600"></canvas>
+        </div>
+
+        <!-- Right sidebar -->
+        <div id="rightbar">
+            <div class="panel">
+                <h3>Minimap</h3>
+                <canvas id="minimapCanvas" width="180" height="180"></canvas>
+            </div>
+            <div class="panel">
+                <h3>Map Info</h3>
+                <div id="infoPanel">
+                    <div class="info-row"><span class="info-label">Size:</span><span class="info-value" id="infoSize">—</span></div>
+                    <div class="info-row"><span class="info-label">Tiles:</span><span class="info-value" id="infoTiles">—</span></div>
+                    <div class="info-row"><span class="info-label">Entities:</span><span class="info-value" id="infoEntities">—</span></div>
+                    <div class="info-row"><span class="info-label">Lanes:</span><span class="info-value" id="infoLanes">—</span></div>
+                </div>
+            </div>
+            <div class="panel">
+                <h3>Selected</h3>
+                <div id="infoPanel">
+                    <div class="info-row"><span class="info-label">Tool:</span><span class="info-value" id="infoTool">Brush</span></div>
+                    <div class="info-row"><span class="info-label">Terrain:</span><span class="info-value" id="infoTerrain">Grass</span></div>
+                    <div class="info-row"><span class="info-label">Cursor:</span><span class="info-value" id="infoCursor">—</span></div>
+                </div>
+            </div>
+            <div class="panel">
+                <h3>Controls</h3>
+                <div style="font-size:10px; color:#666; line-height:1.6;">
+                    <b>WASD/Arrows</b> — Pan camera<br>
+                    <b>Scroll</b> — Zoom (1px tiles)<br>
+                    <b>Left-click</b> — Paint / Place<br>
+                    <b>Right-click</b> — Pan / Delete<br>
+                    <b>Shift+Click</b> — Erase terrain<br>
+                    <b>Del</b> — Delete selected entity<br>
+                    <b>G</b> — Toggle grid<br>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New map dialog -->
+    <div id="overlay"></div>
+    <div id="newMapDialog">
+        <h3 style="color:#e94560;">New Map</h3>
+        <label>Name</label>
+        <input type="text" id="newMapName" value="untitled" placeholder="map-name">
+        <label>Columns (width in tiles)</label>
+        <input type="number" id="newMapCols" value="80" min="10" max="500">
+        <label>Rows (height in tiles)</label>
+        <input type="number" id="newMapRows" value="60" min="10" max="500">
+        <label>Tile size (pixels)</label>
+        <input type="number" id="newMapTile" value="10" min="4" max="50">
+        <div class="dialog-buttons">
+            <button id="newMapCancel" style="background:#0d1b2a; color:#888; border:1px solid #333; padding:6px 14px; border-radius:4px; cursor:pointer;">Cancel</button>
+            <button id="newMapCreate" style="background:#e94560; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer;">Create</button>
+        </div>
+    </div>
+
+    <!-- Load modules in dependency order -->
+    <script src="Map.js"></script>
+    <script src="src/Constants.js"></script>
+    <script src="src/Geometry.js"></script>
+    <script src="src/Camera.js"></script>
+    <script src="src/Player.js"></script>
+    <script src="src/Renderer.js"></script>
+    <script src="src/Controller.js"></script>
+    <script src="src/Game.js"></script>
+    <script src="src/MapEditor.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('editorCanvas');
+            const minimapCanvas = document.getElementById('minimapCanvas');
+            const statusEl = document.getElementById('statusMsg');
+
+            // Create editor
+            const editor = new MapEditor(canvas, minimapCanvas);
+            editor.onStatus = (msg) => { statusEl.textContent = msg; };
+            window.editor = editor;
+
+            // --- Populate terrain palette ---
+            const terrainGrid = document.getElementById('terrainGrid');
+            const terrainEntries = Object.entries(Terrain);
+            let activeTerrainBtn = null;
+            for (const [key, t] of terrainEntries) {
+                const btn = document.createElement('div');
+                btn.className = 'terrain-btn';
+                btn.innerHTML = `<div class="terrain-swatch" style="background:${t.color}"></div>${t.name}`;
+                if (t === Terrain.GRASS) {
+                    btn.classList.add('active');
+                    activeTerrainBtn = btn;
+                }
+                btn.addEventListener('click', () => {
+                    if (activeTerrainBtn) activeTerrainBtn.classList.remove('active');
+                    btn.classList.add('active');
+                    activeTerrainBtn = btn;
+                    editor.selectedTerrain = t;
+                    document.getElementById('infoTerrain').textContent = t.name;
+                });
+                terrainGrid.appendChild(btn);
+            }
+
+            // --- Populate entity palette ---
+            const entityGrid = document.getElementById('entityGrid');
+            const entityEntries = Object.entries(EntityType);
+            let activeEntityBtn = null;
+            for (const [key, type] of entityEntries) {
+                const btn = document.createElement('div');
+                btn.className = 'entity-btn';
+                btn.innerHTML = `<div class="entity-shape" style="background:${
+                    type === EntityType.TOWER ? '#4444ff' :
+                    type === EntityType.NEXUS ? '#6666ff' :
+                    type === EntityType.BASE ? '#3333aa' :
+                    type === EntityType.SPAWN_POINT ? '#66aaff' :
+                    type === EntityType.SHOP ? '#ccc' :
+                    type === EntityType.WAYPOINT ? '#ff0' :
+                    type === EntityType.NEUTRAL_CAMP ? '#cc88cc' : '#888'
+                }; border-radius:${
+                    type === EntityType.TOWER || type === EntityType.BASE ? '2px' :
+                    type === EntityType.WAYPOINT ? '50%' : '50%'
+                }"></div>${type}`;
+                btn.addEventListener('click', () => {
+                    if (activeEntityBtn) activeEntityBtn.classList.remove('active');
+                    btn.classList.add('active');
+                    activeEntityBtn = btn;
+                    editor.selectedEntityType = type;
+                });
+                entityGrid.appendChild(btn);
+            }
+            // Default: first entity (spawn_point) active
+            if (entityGrid.children.length > 0) {
+                entityGrid.children[0].classList.add('active');
+                activeEntityBtn = entityGrid.children[0];
+            }
+
+            // --- Team selector ---
+            document.querySelectorAll('.team-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.team-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    editor.selectedTeam = parseInt(btn.dataset.team);
+                });
+            });
+
+            // --- Tool buttons ---
+            const toolGrid = document.getElementById('toolGrid');
+            let activeToolBtn = toolGrid.querySelector('.active');
+            function setTool(toolName) {
+                editor.tool = toolName;
+                if (activeToolBtn) activeToolBtn.classList.remove('active');
+                const btn = toolGrid.querySelector(`[data-tool="${toolName}"]`);
+                if (btn) { btn.classList.add('active'); activeToolBtn = btn; }
+
+                // Show/hide panels
+                document.getElementById('brushPanel').style.display =
+                    (toolName === 'brush' || toolName === 'fill') ? 'block' : 'none';
+                document.getElementById('terrainPanel').style.display =
+                    (toolName === 'brush' || toolName === 'fill') ? 'block' : 'none';
+                document.getElementById('entityPanel').style.display =
+                    (toolName === 'entity') ? 'block' : 'none';
+
+                // Update info
+                const labels = { brush: 'Brush', fill: 'Fill', entity: 'Entity', select: 'Select' };
+                document.getElementById('infoTool').textContent = labels[toolName] || toolName;
+
+                // Cursor
+                canvas.style.cursor = toolName === 'select' ? 'pointer' : 'crosshair';
+            }
+            toolGrid.querySelectorAll('.tool-btn').forEach(btn => {
+                btn.addEventListener('click', () => setTool(btn.dataset.tool));
+            });
+
+            // --- Brush size ---
+            const brushSlider = document.getElementById('brushSize');
+            const brushLabel = document.getElementById('brushSizeLabel');
+            brushSlider.addEventListener('input', () => {
+                editor.brushSize = parseInt(brushSlider.value);
+                brushLabel.textContent = `${editor.brushSize} tile${editor.brushSize > 1 ? 's' : ''}`;
+            });
+
+            // --- View toggles ---
+            document.getElementById('showGrid').addEventListener('change', e => editor.showGrid = e.target.checked);
+            document.getElementById('showEntities').addEventListener('change', e => editor.showEntities = e.target.checked);
+            document.getElementById('showLanes').addEventListener('change', e => editor.showLanes = e.target.checked);
+            document.getElementById('showWaypoints').addEventListener('change', e => editor.showWaypoints = e.target.checked);
+
+            // --- Save button ---
+            document.getElementById('btnSave').addEventListener('click', async () => {
+                const name = document.getElementById('mapNameInput').value.trim();
+                if (!name) { statusEl.textContent = 'Enter a map name'; return; }
+                if (!editor.map) { statusEl.textContent = 'No map to save'; return; }
+                await editor.save(name);
+                await refreshMapList();
+            });
+
+            // --- New map button ---
+            const dialog = document.getElementById('newMapDialog');
+            const overlay = document.getElementById('overlay');
+            document.getElementById('btnNew').addEventListener('click', () => {
+                dialog.classList.add('show');
+                overlay.classList.add('show');
+            });
+            document.getElementById('newMapCancel').addEventListener('click', () => {
+                dialog.classList.remove('show');
+                overlay.classList.remove('show');
+            });
+            document.getElementById('newMapCreate').addEventListener('click', () => {
+                const name = document.getElementById('newMapName').value.trim() || 'untitled';
+                const cols = parseInt(document.getElementById('newMapCols').value) || 80;
+                const rows = parseInt(document.getElementById('newMapRows').value) || 60;
+                const tile = parseInt(document.getElementById('newMapTile').value) || 10;
+                editor.newMap(cols, rows, tile, name);
+                document.getElementById('mapNameInput').value = name;
+                dialog.classList.remove('show');
+                overlay.classList.remove('show');
+            });
+
+            // --- Test play button ---
+            document.getElementById('btnPlay').addEventListener('click', () => {
+                const name = document.getElementById('mapNameInput').value.trim();
+                if (!name || !editor.map) { statusEl.textContent = 'Save the map first'; return; }
+                window.open(`/?map=${name}`, '_blank');
+            });
+
+            // --- Map list dropdown ---
+            async function refreshMapList() {
+                const maps = await editor.fetchMapList();
+                const select = document.getElementById('mapSelect');
+                select.innerHTML = '<option value="">— Load Map —</option>';
+                for (const name of maps) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    select.appendChild(opt);
+                }
+            }
+            document.getElementById('mapSelect').addEventListener('change', async (e) => {
+                if (e.target.value) {
+                    await editor.fetchMap(e.target.value);
+                    document.getElementById('mapNameInput').value = e.target.value;
+                }
+            });
+
+            // --- Canvas input ---
+            canvas.addEventListener('mousedown', (e) => editor.handleMouseDown(e));
+            canvas.addEventListener('mousemove', (e) => editor.handleMouseMove(e));
+            canvas.addEventListener('mouseup', (e) => editor.handleMouseUp(e));
+            canvas.addEventListener('wheel', (e) => editor.handleWheel(e), { passive: false });
+            canvas.addEventListener('contextmenu', (e) => editor.handleContextMenu(e));
+            minimapCanvas.addEventListener('click', (e) => editor.handleMinimapClick(e));
+
+            // Keyboard
+            document.addEventListener('keydown', (e) => {
+                // Don't capture when typing in inputs
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+                editor.handleKeyDown(e);
+            });
+            document.addEventListener('keyup', (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+                editor.handleKeyUp(e);
+            });
+
+            // --- Load default map if available ---
+            (async () => {
+                await refreshMapList();
+                const params = new URLSearchParams(window.location.search);
+                const mapName = params.get('map');
+                if (mapName) {
+                    await editor.fetchMap(mapName);
+                    document.getElementById('mapNameInput').value = mapName;
+                } else {
+                    // Try loading summoners-rift as default
+                    try {
+                        const res = await fetch('/maps/summoners-rift.json');
+                        if (res.ok) {
+                            const data = await res.json();
+                            editor.loadMap(GameMap.fromJSON(data));
+                            document.getElementById('mapNameInput').value = 'summoners-rift';
+                        }
+                    } catch (e) { /* no default map */ }
+                }
+            })();
+
+            // Start the editor loop
+            editor.start();
+        });
+    </script>
+</body>
+
+</html>
