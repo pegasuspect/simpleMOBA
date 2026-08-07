@@ -15,24 +15,55 @@
             display: flex;
             align-items: center;
         }
+
+        #loading {
+            text-align: center;
+            font-family: monospace;
+            font-size: 14px;
+            color: #555;
+            margin-top: 20px;
+        }
     </style>
 </head>
 
 <body>
     <script src="/socket.io/socket.io.js"></script>
     <script>
-
         document.addEventListener("DOMContentLoaded", () => {
-            var ctrl = new Controller()
             var c = document.getElementById("myCanvas");
             var ctx = c.getContext("2d");
             var socket = io();
+            var loadingDiv = document.getElementById("loading");
+
+            // Map to load — can be changed via URL param: ?map=summoners-rift
+            var params = new URLSearchParams(window.location.search);
+            var mapName = params.get("map") || "summoners-rift";
+
+            // Create game instance (id assigned when server responds)
             window.game = new Game(ctx, socket, -1);
 
             socket.on('id', (id) => {
                 if (window.game && window.game.id === -1) window.game.id = id;
             });
 
+            // Load the map from the server, then start the game loop
+            fetch(`/maps/${mapName}.json`)
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return res.json();
+                })
+                .then(data => {
+                    var map = GameMap.fromJSON(data);
+                    window.game.loadMap(map);
+                    loadingDiv.style.display = 'none';
+                })
+                .catch(err => {
+                    loadingDiv.textContent = `Failed to load map "${mapName}": ${err.message}`;
+                    loadingDiv.style.color = 'red';
+                    console.error('Map load error:', err);
+                });
+
+            // Send local player position to server
             setInterval(() => {
                 if (window.game && window.game.id !== -1) {
                     socket.emit('position', {
@@ -43,31 +74,31 @@
                 }
             }, 70)
 
+            // Receive other players' positions
             socket.on('position', function (otherPlayers) {
                 window.game.otherPlayers = otherPlayers;
             });
 
+            // Input handlers
             c.addEventListener("mousedown", window.game.controller.mouseDown.bind(window.game.controller))
             c.addEventListener("contextmenu", window.game.controller.contextMenu.bind(window.game.controller))
             document.addEventListener("keydown", window.game.controller.keyDown.bind(window.game.controller))
             document.addEventListener("keyup", window.game.controller.keyUp.bind(window.game.controller))
 
-            window.main = () => {
-                window.requestAnimationFrame(main);
-                window.game.update()
-                window.game.draw()
-                // Whatever your main loop needs to do
-            };
-
-            main(); // Start the cycle
+            // Start the fixed-timestep game loop
+            window.game.start();
 
         });
     </script>
 
+    <!-- Load Map.js (data model) before lib.js (game engine) -->
+    <script src="Map.js"></script>
     <script src="lib.js"></script>
+
     <div class="lola">
         <canvas id="myCanvas" width="800" height="600"></canvas>
     </div>
+    <div id="loading">Loading map...</div>
 </body>
 
 </html>
