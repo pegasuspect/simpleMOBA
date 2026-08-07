@@ -196,9 +196,8 @@ class Controller {
                 // Check if this was a tap (no drag, quick release)
                 if (!this._isDragging) {
                     // It's a tap — move player to the tapped location
-                    const rect = this.game.canvas || this._getCanvasRect();
+                    const rect = this._getCanvasRect();
                     if (rect) {
-                        // offsetX/offsetY relative to canvas
                         const offsetX = touch.clientX - rect.left;
                         const offsetY = touch.clientY - rect.top;
                         this.game.p1.setDestination(
