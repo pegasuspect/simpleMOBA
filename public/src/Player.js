@@ -22,7 +22,7 @@ class Player {
     color = "red"
 
     // movement — pixels per second
-    speed = 240   // was 4px/frame * 60fps = 240px/s
+    speed = 300   // 240 * 1.25 — 25% speed increase
     destination = null  // { x, y }
     direction = null    // { dx, dy } unit vector
     remainingDist = 0   // pixels left to travel

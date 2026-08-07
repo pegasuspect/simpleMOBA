@@ -10,7 +10,7 @@ class Camera {
     prevX = 0   // for interpolation
     prevY = 0
 
-    speed = 120   // pixels per second (was 2px/frame * 60fps = 120px/s)
+    speed = 450   // 1.5x player speed — camera must outpace character
     direction = [0, 0]
 
     /**

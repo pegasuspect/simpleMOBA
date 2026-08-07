@@ -157,9 +157,9 @@ test('MAX_TICKS_PER_FRAME is 5', () => {
 console.log('\n=== Player Movement (dt-based) ===');
 // ---------------------------------------------------------------------------
 
-test('Player speed is 240 px/s (was 4px/frame * 60fps)', () => {
+test('Player speed is 300 px/s (25% increase from 240)', () => {
     const p = new Player();
-    assert.strictEqual(p.speed, 240);
+    assert.strictEqual(p.speed, 300);
 });
 
 test('Player moves correct distance in one tick (dt=1/60)', () => {
@@ -172,8 +172,8 @@ test('Player moves correct distance in one tick (dt=1/60)', () => {
     const dt = 1/60;
     p.update(dt);
 
-    // 240px/s * (1/60)s = 4px per tick
-    assert.ok(Math.abs(p.x - 504) < 0.01, `Expected x≈504, got ${p.x}`);
+    // 300px/s * (1/60)s = 5px per tick
+    assert.ok(Math.abs(p.x - 505) < 0.01, `Expected x≈505, got ${p.x}`);
     assert.ok(Math.abs(p.y - 500) < 0.01);
 });
 
@@ -189,8 +189,8 @@ test('Player moves correct distance over 1 second of ticks', () => {
         p.update(dt);
     }
 
-    // 60 ticks * 4px = 240px → x = 500 + 240 = 740
-    assert.ok(Math.abs(p.x - 740) < 0.1, `Expected x≈740, got ${p.x}`);
+    // 60 ticks * 5px = 300px → x = 500 + 300 = 800
+    assert.ok(Math.abs(p.x - 800) < 0.1, `Expected x≈800, got ${p.x}`);
 });
 
 test('Player reaches exact destination and stops', () => {
@@ -239,9 +239,9 @@ test('Player moves diagonally at correct speed', () => {
     p.update(dt);
 
     // Direction should be (0.7071..., 0.7071...)
-    // Distance per tick = 4px
-    // dx = 4 * 0.7071 ≈ 2.828
-    const expectedD = 4 * Math.SQRT1_2;
+    // Distance per tick = 5px
+    // dx = 5 * 0.7071 ≈ 3.536
+    const expectedD = 5 * Math.SQRT1_2;
     assert.ok(Math.abs(p.x - (500 + expectedD)) < 0.01, `Expected x≈${(500 + expectedD).toFixed(3)}, got ${p.x}`);
     assert.ok(Math.abs(p.y - (500 + expectedD)) < 0.01, `Expected y≈${(500 + expectedD).toFixed(3)}, got ${p.y}`);
 });
@@ -304,21 +304,21 @@ test('Player can move freely on grass with no obstacles', () => {
 console.log('\n=== Camera Movement (dt-based) ===');
 // ---------------------------------------------------------------------------
 
-test('Camera speed is 120 px/s (was 2px/frame * 60fps)', () => {
+test('Camera speed is 450 px/s (1.5x player, was 120)', () => {
     const cam = new Camera();
-    assert.strictEqual(cam.speed, 120);
+    assert.strictEqual(cam.speed, 450);
 });
 
 test('Camera moves correct distance in one tick', () => {
     const cam = new Camera();
     cam.x = 0;
     cam.y = 0;
-    cam.direction = [1, 0];  // moving right
+    cam.direction = [1, 0];
 
     cam.update(1/60);
 
-    // 120px/s * (1/60)s = 2px per tick
-    assert.ok(Math.abs(cam.x - 2) < 0.01, `Expected x≈2, got ${cam.x}`);
+    // 450px/s * (1/60)s = 7.5px per tick
+    assert.ok(Math.abs(cam.x - 7.5) < 0.01, `Expected x≈7.5, got ${cam.x}`);
 });
 
 test('Camera moves correct distance over 1 second', () => {
@@ -331,9 +331,9 @@ test('Camera moves correct distance over 1 second', () => {
         cam.update(1/60);
     }
 
-    // 60 ticks * 2px = 120px in each direction
-    assert.ok(Math.abs(cam.x - 120) < 0.1, `Expected x≈120, got ${cam.x}`);
-    assert.ok(Math.abs(cam.y - 120) < 0.1, `Expected y≈120, got ${cam.y}`);
+    // 60 ticks * 7.5px = 450px in each direction
+    assert.ok(Math.abs(cam.x - 450) < 0.1, `Expected x≈450, got ${cam.x}`);
+    assert.ok(Math.abs(cam.y - 450) < 0.1, `Expected y≈450, got ${cam.y}`);
 });
 
 test('Camera with zero direction does not move', () => {
@@ -427,13 +427,12 @@ test('Same total time produces same position regardless of tick count', () => {
     pB.x = 500; pB.y = 500;
     pB.map = makeTestMap();
     pB.setDestination(10000, 500);
-    pB.speed = 240;  // same speed
+    pB.speed = 300;  // same speed
     for (let i = 0; i < 120; i++) pB.update(1/120);
 
-    // Both should have traveled ~240px in 1 second
-    // (small float differences are acceptable)
+    // Both should have traveled ~300px in 1 second
     assert.ok(Math.abs(pA.x - pB.x) < 0.1,
-        `Run A: ${pA.x}, Run B: ${pB.x} — should be ~equal (740px)`);
+        `Run A: ${pA.x}, Run B: ${pB.x} — should be ~equal (800px)`);
 });
 
 test('Same total time produces same position at 144Hz equivalent', () => {
@@ -451,9 +450,9 @@ test('Same total time produces same position at 144Hz equivalent', () => {
     pB.setDestination(10000, 500);
     for (let i = 0; i < 144; i++) pB.update(1/144);
 
-    // Both should have traveled ~240px in 1 second
+    // Both should have traveled ~300px in 1 second
     assert.ok(Math.abs(pA.x - pB.x) < 0.1,
-        `60Hz: ${pA.x}, 144Hz: ${pB.x} — should be ~equal (740px)`);
+        `60Hz: ${pA.x}, 144Hz: ${pB.x} — should be ~equal (800px)`);
 });
 
 // ---------------------------------------------------------------------------
