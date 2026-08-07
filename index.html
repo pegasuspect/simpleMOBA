@@ -33,6 +33,8 @@
         #gameContainer {
             width: 100vw;
             height: 100vh;
+            /* dvh = dynamic viewport height — accounts for mobile browser chrome */
+            height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -152,7 +154,8 @@
             position: absolute;
             bottom: 0;
             left: 0;
-            width: 320px;
+            width: 100%;
+            max-width: 320px;
             max-height: 240px;
             display: flex;
             flex-direction: column;
@@ -181,7 +184,8 @@
             border-top: 1px solid #333;
             background: rgba(0, 0, 0, 0.7);
             color: #e0e0e0;
-            font-size: 12px;
+            /* 16px prevents iOS auto-zoom on focus; also better tap target on Android */
+            font-size: 16px;
             font-family: monospace;
             outline: none;
             box-sizing: border-box;
@@ -405,6 +409,32 @@
                         chatInput.value = '';
                     }
                 }
+            });
+
+            // --- Mobile keyboard handling ---
+            // Android Chrome doesn't resize 100vh when the soft keyboard opens,
+            // so the chat input (pinned to bottom:0) gets hidden behind it.
+            // Use the Visual Viewport API to shift the chat panel up by the
+            // keyboard height. Fall back to window.innerHeight difference on
+            // browsers without visualViewport.
+            var chatPanel = document.getElementById('chatPanel');
+
+            function adjustForKeyboard() {
+                if (window.visualViewport) {
+                    var keyboardHeight = window.innerHeight - window.visualViewport.height;
+                    chatPanel.style.bottom = keyboardHeight + 'px';
+                } else {
+                    // Fallback: if innerHeight shrank, lift panel
+                    // (less precise but covers older browsers)
+                }
+            }
+
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', adjustForKeyboard);
+            }
+            // Reset when input loses focus
+            chatInput.addEventListener('blur', function() {
+                chatPanel.style.bottom = '0px';
             });
 
             // Load the map from the server, then start the game loop
