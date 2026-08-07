@@ -29,6 +29,7 @@ class Game {
     constructor(ctx, socket, id) {
         this.renderer = new Renderer(ctx, this.cam);
         this.controller = new Controller(this);
+        this.canvas = ctx.canvas;  // reference for touch coordinate conversion
 
         // Loop state
         this._running = false;
@@ -53,6 +54,15 @@ class Game {
 
     // Backward-compatible alias for code that references `game.utils`
     get utils() { return this.renderer; }
+
+    /**
+     * Resize the canvas viewport. Called on window resize and initial load.
+     * @param {number} cssWidth  - CSS pixel width of the canvas
+     * @param {number} cssHeight - CSS pixel height of the canvas
+     */
+    resizeViewport(cssWidth, cssHeight) {
+        this.renderer.resizeViewport(cssWidth, cssHeight);
+    }
 
     /**
      * Load a GameMap into the game. Player position is set to the first
@@ -198,6 +208,7 @@ class Game {
     update(dt) {
         this.p1.update(dt);
         this.cam.update(dt);
+        this.controller.applyJoystick();
     }
 
     /**
@@ -238,9 +249,42 @@ class Game {
             this.renderer.drawDebug(this._stats);
         }
 
+        // Virtual joystick overlay (mobile)
+        this._drawJoystick();
+
         // Restore camera to non-interpolated position for next update
         this.cam.x = savedCamX;
         this.cam.y = savedCamY;
+    }
+
+    /**
+     * Draw the on-screen virtual joystick if active.
+     * @private
+     */
+    _drawJoystick() {
+        const joy = this.controller.getJoystickState();
+        if (!joy) return;
+
+        const ctx = this.renderer.ctx;
+        const radius = 60;
+        const knobRadius = 30;
+        const knobX = joy.startX + joy.dx * radius;
+        const knobY = joy.startY + joy.dy * radius;
+
+        // Outer ring
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(joy.startX, joy.startY, radius, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        // Inner knob
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(knobX, knobY, knobRadius, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.stroke();
     }
 }
 

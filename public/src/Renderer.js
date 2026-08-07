@@ -16,9 +16,19 @@ class Renderer {
         this.ctx = ctx;
         this.ctx.fillStyle = 'black';
         this.cam = cam;
-        // Viewport dimensions — used for tile culling
+        // Viewport dimensions — updated by resizeViewport() when the canvas
+        // is resized. Defaults match the original 800x600 for backward compat.
         this.viewWidth = 800;
         this.viewHeight = 600;
+    }
+
+    /**
+     * Update viewport dimensions to match the canvas's CSS pixel size.
+     * Called on window resize and on initial load.
+     */
+    resizeViewport(cssWidth, cssHeight) {
+        this.viewWidth = cssWidth;
+        this.viewHeight = cssHeight;
     }
 
     // -------------------------------------------------------------------------

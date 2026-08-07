@@ -1,32 +1,100 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
+    <!-- Mobile viewport: fill screen, prevent user scaling -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>SimpleMOBA</title>
     <style>
-        canvas {
-            margin: auto;
-            width: 800px;
-            height: 600px;
-            border: 1px solid #000000;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        div.lola {
-            margin: auto;
-            margin-top: 50px;
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #0a0a0a;
+            /* Prevent text selection on long-press */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            /* Prevent gesture-based zoom */
+            touch-action: none;
+            overscroll-behavior: none;
+        }
+
+        #gameContainer {
+            width: 100vw;
+            height: 100vh;
             display: flex;
             align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #myCanvas {
+            display: block;
+            /* Canvas fills the viewport via JS resize */
+            width: 100%;
+            height: 100%;
+            touch-action: none;
         }
 
         #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             text-align: center;
             font-family: monospace;
             font-size: 14px;
             color: #555;
-            margin-top: 20px;
         }
+
+        /* Mobile hint — shown on touch devices */
+        #mobileHint {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: sans-serif;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.4);
+            text-align: center;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Link to editor (top-right, semi-transparent) */
+        #editorLink {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            font-family: sans-serif;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.3);
+            text-decoration: none;
+            pointer-events: auto;
+        }
+        #editorLink:active { color: rgba(255, 255, 255, 0.6); }
     </style>
 </head>
 
 <body>
+    <div id="gameContainer">
+        <canvas id="myCanvas"></canvas>
+        <div id="loading">Loading map...</div>
+        <div id="mobileHint" style="display:none;">Left joystick: pan · Tap: move · Drag: pan</div>
+        <a id="editorLink" href="/editor">🗺️ Editor</a>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener("DOMContentLoaded", () => {
@@ -34,6 +102,37 @@
             var ctx = c.getContext("2d");
             var socket = io();
             var loadingDiv = document.getElementById("loading");
+            var container = document.getElementById("gameContainer");
+
+            // --- Detect touch device ---
+            var isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+            if (isTouch) {
+                document.getElementById("mobileHint").style.display = "block";
+            }
+
+            // --- Responsive canvas sizing ---
+            function resizeCanvas() {
+                var w = container.clientWidth;
+                var h = container.clientHeight;
+                var dpr = window.devicePixelRatio || 1;
+
+                // Set canvas backing store size (crisp on retina)
+                c.width = Math.round(w * dpr);
+                c.height = Math.round(h * dpr);
+
+                // Scale context so drawing uses CSS pixels
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                // Tell the game the CSS-pixel viewport size
+                if (window.game) {
+                    window.game.resizeViewport(w, h);
+                }
+            }
+            window.addEventListener("resize", resizeCanvas);
+            window.addEventListener("orientationchange", function() {
+                setTimeout(resizeCanvas, 100);
+            });
+            resizeCanvas();
 
             // Map to load — can be changed via URL param: ?map=summoners-rift
             var params = new URLSearchParams(window.location.search);
@@ -41,6 +140,9 @@
 
             // Create game instance (id assigned when server responds)
             window.game = new Game(ctx, socket, -1);
+
+            // After game creation, resize again so renderer knows correct size
+            resizeCanvas();
 
             socket.on('id', (id) => {
                 if (window.game && window.game.id === -1) window.game.id = id;
@@ -72,22 +174,36 @@
                         id: window.game.id
                     });
                 }
-            }, 70)
+            }, 70);
 
             // Receive other players' positions
             socket.on('position', function (otherPlayers) {
                 window.game.otherPlayers = otherPlayers;
             });
 
-            // Input handlers
-            c.addEventListener("mousedown", window.game.controller.mouseDown.bind(window.game.controller))
-            c.addEventListener("contextmenu", window.game.controller.contextMenu.bind(window.game.controller))
-            document.addEventListener("keydown", window.game.controller.keyDown.bind(window.game.controller))
-            document.addEventListener("keyup", window.game.controller.keyUp.bind(window.game.controller))
+            // --- Input handlers (mouse + touch) ---
+            var ctrl = window.game.controller;
+
+            // Mouse (desktop)
+            c.addEventListener("mousedown", ctrl.mouseDown.bind(ctrl));
+            c.addEventListener("contextmenu", ctrl.contextMenu.bind(ctrl));
+            document.addEventListener("keydown", ctrl.keyDown.bind(ctrl));
+            document.addEventListener("keyup", ctrl.keyUp.bind(ctrl));
+
+            // Touch (mobile)
+            c.addEventListener("touchstart", ctrl.touchStart.bind(ctrl), { passive: false });
+            c.addEventListener("touchmove", ctrl.touchMove.bind(ctrl), { passive: false });
+            c.addEventListener("touchend", ctrl.touchEnd.bind(ctrl), { passive: false });
+            c.addEventListener("touchcancel", ctrl.touchEnd.bind(ctrl), { passive: false });
+
+            // Prevent default touch behaviors on the whole document
+            document.addEventListener("touchstart", function(e) {
+                if (e.target === c) e.preventDefault();
+            }, { passive: false });
+            document.addEventListener("gesturestart", function(e) { e.preventDefault(); });
 
             // Start the fixed-timestep game loop
             window.game.start();
-
         });
     </script>
 
@@ -100,11 +216,6 @@
     <script src="src/Renderer.js"></script>
     <script src="src/Controller.js"></script>
     <script src="src/Game.js"></script>
-
-    <div class="lola">
-        <canvas id="myCanvas" width="800" height="600"></canvas>
-    </div>
-    <div id="loading">Loading map...</div>
 </body>
 
 </html>
