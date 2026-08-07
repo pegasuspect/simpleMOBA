@@ -1,13 +1,15 @@
 {
-  "name": "socket-chat-example",
-  "version": "0.0.1",
-  "description": "my first socket.io app",
+  "name": "simple-moba",
+  "version": "0.1.0",
+  "description": "Simple MOBA prototype with tile-based maps, fixed-timestep loop, and Socket.IO multiplayer",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test/Map.test.js && node test/Loop.test.js && node test/integration.js && node test/sample-map.js && node test/smoke.js"
+  },
   "dependencies": {
     "express": "^4.17.1",
     "socket.io": "^4.1.2",
     "socket.io-client": "^4.8.3"
-  },
-  "scripts": {
-    "start": "node index.js"
   }
 }

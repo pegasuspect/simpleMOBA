@@ -14,15 +14,49 @@
 const assert = require('assert');
 const { GameMap, Terrain, TerrainById, EntityType, Team, MapEntity, Lane } = require('../public/Map.js');
 
-// We need the classes from lib.js, but lib.js uses browser globals.
-// We use Node's vm module to run lib.js in a context with mocked browser APIs.
+// Load the refactored src/ modules into a VM sandbox with mocked browser APIs.
+// Each file uses browser globals (window) and Node exports (module.exports).
+// We concatenate them with export stubs at the end.
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const libSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'lib.js'), 'utf8');
+const srcDir = path.join(__dirname, '..', 'public', 'src');
+const moduleFiles = [
+    'Constants.js',
+    'Geometry.js',
+    'Camera.js',
+    'Player.js',
+    'Renderer.js',
+    'Controller.js',
+    'Game.js',
+];
 
-// Mock browser globals that lib.js expects
+// Read and concatenate all module files
+let combinedSource = '';
+for (const file of moduleFiles) {
+    const filePath = path.join(srcDir, file);
+    combinedSource += fs.readFileSync(filePath, 'utf8') + '\n';
+}
+
+// Append export code — const/let/class in vm are block-scoped and don't
+// attach to the sandbox object automatically.
+const exportCode = `
+    this.Game = Game;
+    this.Player = Player;
+    this.Camera = Camera;
+    this.Controller = Controller;
+    this.Renderer = Renderer;
+    this.FIXED_DT = FIXED_DT;
+    this.FIXED_DT_SEC = FIXED_DT_SEC;
+    this.MAX_FRAME_TIME = MAX_FRAME_TIME;
+    this.MAX_TICKS_PER_FRAME = MAX_TICKS_PER_FRAME;
+    this.grahamScan = grahamScan;
+    this.degree = degree;
+    this.distance = distance;
+`;
+
+// Mock browser globals
 const sandbox = {
     window: {},
     performance: { now: () => Date.now() },
@@ -41,23 +75,12 @@ const sandbox = {
     Lane: Lane,
 };
 vm.createContext(sandbox);
-// Append export code — const/let in vm are block-scoped and don't attach to sandbox
-const libWithExports = libSource + '\n' + `
-    this.Game = Game;
-    this.Player = Player;
-    this.Camera = Camera;
-    this.Controller = Controller;
-    this.Util = Util;
-    this.FIXED_DT = FIXED_DT;
-    this.FIXED_DT_SEC = FIXED_DT_SEC;
-    this.MAX_FRAME_TIME = MAX_FRAME_TIME;
-    this.MAX_TICKS_PER_FRAME = MAX_TICKS_PER_FRAME;
-`;
-vm.runInContext(libWithExports, sandbox);
+vm.runInContext(combinedSource + exportCode, sandbox);
 
 // Extract classes from the sandbox
-const { Game, Player, Camera, Controller, Util,
-        FIXED_DT, FIXED_DT_SEC, MAX_FRAME_TIME, MAX_TICKS_PER_FRAME } = sandbox;
+const { Game, Player, Camera, Controller, Renderer,
+        FIXED_DT, FIXED_DT_SEC, MAX_FRAME_TIME, MAX_TICKS_PER_FRAME,
+        grahamScan, degree, distance } = sandbox;
 
 let passed = 0;
 let failed = 0;

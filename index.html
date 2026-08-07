@@ -91,9 +91,15 @@
         });
     </script>
 
-    <!-- Load Map.js (data model) before lib.js (game engine) -->
+    <!-- Load modules in dependency order -->
     <script src="Map.js"></script>
-    <script src="lib.js"></script>
+    <script src="src/Constants.js"></script>
+    <script src="src/Geometry.js"></script>
+    <script src="src/Camera.js"></script>
+    <script src="src/Player.js"></script>
+    <script src="src/Renderer.js"></script>
+    <script src="src/Controller.js"></script>
+    <script src="src/Game.js"></script>
 
     <div class="lola">
         <canvas id="myCanvas" width="800" height="600"></canvas>
