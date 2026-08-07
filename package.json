@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test/Map.test.js && node test/Loop.test.js && node test/Editor.test.js && node test/integration.js && node test/sample-map.js && node test/smoke.js"
+    "test": "node test/Map.test.js && node test/Loop.test.js && node test/Editor.test.js && node test/integration.js && node test/sample-map.js && node test/smoke.js && node test/chat_smoke.js"
   },
   "dependencies": {
     "express": "^4.17.1",

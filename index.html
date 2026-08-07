@@ -84,6 +84,152 @@
             pointer-events: auto;
         }
         #editorLink:active { color: rgba(255, 255, 255, 0.6); }
+
+        /* --- Username modal --- */
+        #nameModal {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        #nameModal.hidden { display: none; }
+        #nameModal .dialog {
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 24px 28px;
+            text-align: center;
+            font-family: sans-serif;
+            min-width: 300px;
+        }
+        #nameModal h2 {
+            color: #e0e0e0;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+        #nameModal p {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }
+        #nameModal input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            font-size: 15px;
+            font-family: monospace;
+            outline: none;
+            box-sizing: border-box;
+        }
+        #nameModal input:focus { border-color: #5599ff; }
+        #nameModal button {
+            margin-top: 14px;
+            padding: 10px 24px;
+            border: none;
+            border-radius: 4px;
+            background: #4488dd;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            width: 100%;
+        }
+        #nameModal button:active { background: #3377cc; }
+        #nameModal .error {
+            color: #ff6666;
+            font-size: 12px;
+            margin-top: 10px;
+            min-height: 14px;
+        }
+
+        /* --- Chat panel (bottom-left) --- */
+        #chatPanel {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 320px;
+            max-height: 240px;
+            display: flex;
+            flex-direction: column;
+            z-index: 50;
+            pointer-events: auto;
+        }
+        #chatMessages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 10px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #ccc;
+            background: rgba(0, 0, 0, 0.5);
+            max-height: 200px;
+            scrollbar-width: thin;
+        }
+        #chatMessages .chat-user { color: #6fa8dc; }
+        #chatMessages .chat-self { color: #93c47d; }
+        #chatMessages .chat-system { color: #999; font-style: italic; }
+        #chatInput {
+            width: 100%;
+            padding: 8px 10px;
+            border: none;
+            border-top: 1px solid #333;
+            background: rgba(0, 0, 0, 0.7);
+            color: #e0e0e0;
+            font-size: 12px;
+            font-family: monospace;
+            outline: none;
+            box-sizing: border-box;
+        }
+        #chatInput::placeholder { color: #555; }
+
+        /* --- Online users panel (top-left) --- */
+        #usersPanel {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-family: sans-serif;
+            font-size: 12px;
+            color: #aaa;
+            z-index: 50;
+            min-width: 120px;
+            max-width: 200px;
+        }
+        #usersPanel .users-title {
+            color: #e0e0e0;
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        #usersPanel .users-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        #usersPanel .users-list li {
+            padding: 1px 0;
+            color: #88aacc;
+        }
+        #usersPanel .users-list li.me {
+            color: #93c47d;
+            font-weight: bold;
+        }
+        #usersPanel .users-count {
+            color: #666;
+            font-size: 10px;
+            margin-top: 4px;
+        }
     </style>
 </head>
 
@@ -93,6 +239,30 @@
         <div id="loading">Loading map...</div>
         <div id="mobileHint" style="display:none;">Tap: move · Drag: pan camera</div>
         <a id="editorLink" href="/editor">🗺️ Editor</a>
+
+        <!-- Online users panel -->
+        <div id="usersPanel">
+            <div class="users-title">Online</div>
+            <ul class="users-list" id="usersList"></ul>
+            <div class="users-count" id="usersCount">0 players</div>
+        </div>
+
+        <!-- Chat panel -->
+        <div id="chatPanel">
+            <div id="chatMessages"></div>
+            <input id="chatInput" type="text" placeholder="Type a message..." maxlength="500" autocomplete="off">
+        </div>
+
+        <!-- Username modal -->
+        <div id="nameModal">
+            <div class="dialog">
+                <h2>Welcome to SimpleMOBA</h2>
+                <p>Enter a username to join the game</p>
+                <input id="nameInput" type="text" placeholder="Username" maxlength="20" autocomplete="off" autofocus>
+                <button id="nameSubmit">Join Game</button>
+                <div class="error" id="nameError"></div>
+            </div>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -146,6 +316,85 @@
 
             socket.on('id', (id) => {
                 if (window.game && window.game.id === -1) window.game.id = id;
+            });
+
+            // --- Username modal ---
+            var nameModal = document.getElementById('nameModal');
+            var nameInput = document.getElementById('nameInput');
+            var nameSubmit = document.getElementById('nameSubmit');
+            var nameError = document.getElementById('nameError');
+            var myUsername = null;
+
+            function submitUsername() {
+                var name = nameInput.value.trim();
+                nameError.textContent = '';
+                socket.emit('setUsername', name, function(ack) {
+                    if (ack && ack.ok) {
+                        myUsername = ack.username;
+                        nameModal.classList.add('hidden');
+                        addChatMessage(null, 'Welcome, ' + ack.username + '!', 'system');
+                    } else {
+                        nameError.textContent = ack ? ack.error : 'Failed to set username.';
+                    }
+                });
+            }
+
+            nameSubmit.addEventListener('click', submitUsername);
+            nameInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); submitUsername(); }
+            });
+
+            // --- Online users panel ---
+            var usersList = document.getElementById('usersList');
+            var usersCount = document.getElementById('usersCount');
+
+            socket.on('users', function(list) {
+                usersList.innerHTML = '';
+                list.forEach(function(u) {
+                    var li = document.createElement('li');
+                    li.textContent = u.username || ('Player ' + u.id);
+                    if (u.id === window.game.id) li.classList.add('me');
+                    usersList.appendChild(li);
+                });
+                var n = list.length;
+                usersCount.textContent = n + (n === 1 ? ' player' : ' players');
+            });
+
+            // --- Chat ---
+            var chatMessages = document.getElementById('chatMessages');
+            var chatInput = document.getElementById('chatInput');
+
+            function addChatMessage(msg, text, cls) {
+                var div = document.createElement('div');
+                if (msg) {
+                    // msg = { id, username, text, timestamp }
+                    var isMe = msg.id === window.game.id;
+                    var span = document.createElement('span');
+                    span.className = isMe ? 'chat-self' : 'chat-user';
+                    span.textContent = msg.username + ': ';
+                    div.appendChild(span);
+                    div.appendChild(document.createTextNode(msg.text));
+                } else {
+                    div.className = cls || 'chat-system';
+                    div.textContent = text;
+                }
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            socket.on('chat', function(msg) {
+                addChatMessage(msg);
+            });
+
+            chatInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    var text = chatInput.value.trim();
+                    if (text && myUsername) {
+                        socket.emit('chat', text);
+                        chatInput.value = '';
+                    }
+                }
             });
 
             // Load the map from the server, then start the game loop

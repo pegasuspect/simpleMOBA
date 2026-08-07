@@ -5,8 +5,7 @@ const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const port = process.env.PORT || 3000;
-let id = 0;
-let players = [];
+let id = 0;  // numeric player id counter
 
 app.use(express.static('public'));
 app.use(express.json());  // for POST body parsing
@@ -117,32 +116,92 @@ app.delete('/maps/:name', (req, res) => {
   }
 });
 
+// --- Online users & chat ---------------------------------------------------
+// users maps socket.id → { id, username, x, y }
+// Players are keyed by socket.id so disconnect cleanup is O(1).
+// The numeric `id` is still assigned for game-entity rendering.
+const users = new Map();
+
+// Sanitize usernames: trim, max 20 chars, alphanumeric + underscore/dash
+function sanitizeUsername(name) {
+  if (typeof name !== 'string') return null;
+  const cleaned = name.trim().slice(0, 20);
+  if (!cleaned) return null;
+  if (!/^[a-zA-Z0-9_-]+$/.test(cleaned)) return null;
+  return cleaned;
+}
+
+// Broadcast the current online user list (id + username only, no positions)
+function broadcastUserList() {
+  const list = Array.from(users.values()).map(u => ({
+    id: u.id,
+    username: u.username,
+  }));
+  io.emit('users', list);
+}
+
 io.on('connection', (socket) => {
-  socket.on('position', player => {
-    let p = players.find(x => x.id === player.id);
-    if (p) {
-      p.x = player.x
-      p.y = player.y
-    } else {
-      console.error(`Player with ${player.id} not found! Recieved: `, typeof player, player);
+  const playerId = id++;
+  users.set(socket.id, { id: playerId, username: null, x: 0, y: 0 });
+
+  // Send the player their numeric id (used for game entity rendering)
+  socket.emit('id', playerId);
+
+  socket.on('setUsername', (name, ack) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+    const clean = sanitizeUsername(name);
+    if (!clean) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid username. Use letters, numbers, _ or - (max 20 chars).' });
+      return;
     }
+    user.username = clean;
+    if (typeof ack === 'function') ack({ ok: true, username: clean });
+    console.log(`User joined: ${clean} (id=${user.id}, socket=${socket.id})`);
+    broadcastUserList();
   });
 
-  players.push({ x: 0, y: 0, id });
-  io.emit('id', id);
+  socket.on('chat', (msg) => {
+    const user = users.get(socket.id);
+    if (!user || !user.username) return;
+    if (typeof msg !== 'string') return;
+    const text = msg.trim().slice(0, 500);
+    if (!text) return;
+    io.emit('chat', {
+      id: user.id,
+      username: user.username,
+      text: text,
+      timestamp: Date.now(),
+    });
+  });
 
-  id++;
+  socket.on('position', (player) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+    // Trust only the coordinates from the client; use server-side id
+    user.x = player.x;
+    user.y = player.y;
+  });
+
+  socket.on('disconnect', () => {
+    const user = users.get(socket.id);
+    if (user && user.username) {
+      console.log(`User left: ${user.username} (id=${user.id})`);
+    }
+    users.delete(socket.id);
+    broadcastUserList();
+  });
 });
 
+// Broadcast positions every 100ms (10 tick rate)
 setInterval(() => {
-  if (players.length) {
-    io.emit('position', players);
+  if (users.size) {
+    const positions = Array.from(users.values()).map(u => ({
+      id: u.id, x: u.x, y: u.y,
+    }));
+    io.emit('position', positions);
   }
 }, 100);
-
-setInterval(()=> {
-  players.forEach(x=> console.log(x.x + " " + x.y + ", " + x.id))
-},1000)
 
 http.listen(port, () => {
   console.log(`Socket.IO server running at http://127.0.0.1:${port}/`);
