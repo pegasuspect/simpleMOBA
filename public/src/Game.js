@@ -208,7 +208,6 @@ class Game {
     update(dt) {
         this.p1.update(dt);
         this.cam.update(dt);
-        this.controller.applyJoystick();
     }
 
     /**
@@ -249,42 +248,9 @@ class Game {
             this.renderer.drawDebug(this._stats);
         }
 
-        // Virtual joystick overlay (mobile)
-        this._drawJoystick();
-
         // Restore camera to non-interpolated position for next update
         this.cam.x = savedCamX;
         this.cam.y = savedCamY;
-    }
-
-    /**
-     * Draw the on-screen virtual joystick if active.
-     * @private
-     */
-    _drawJoystick() {
-        const joy = this.controller.getJoystickState();
-        if (!joy) return;
-
-        const ctx = this.renderer.ctx;
-        const radius = 60;
-        const knobRadius = 30;
-        const knobX = joy.startX + joy.dx * radius;
-        const knobY = joy.startY + joy.dy * radius;
-
-        // Outer ring
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(joy.startX, joy.startY, radius, 0, 2 * Math.PI);
-        ctx.stroke();
-
-        // Inner knob
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.beginPath();
-        ctx.arc(knobX, knobY, knobRadius, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.stroke();
     }
 }
 
